@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# AIScan - Automated Security Scanner with AI Analysis
+# AIScan - Aggressive Automated Security Scanner with AI Analysis
 # Usage: ./aiscan <target>
 
 # Colors for output
@@ -14,8 +14,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-MODEL="llama3.2"  # Default model - change this or use -m flag
-TEMP_DIR="/tmp/aiscan_$"
+MODEL="huihui_ai/qwen3-abliterated:8b"  # Default model - change this or use -m flag
+TEMP_DIR="/tmp/aiscan_$$"
 mkdir -p "$TEMP_DIR"
 
 # Config file support
@@ -29,11 +29,12 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 # Banner
 show_banner() {
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║                                            ║${NC}"
-    echo -e "${CYAN}║     🔍 ${BOLD}AIScan - AI Security Scanner${NC}${CYAN} 🔍    ║${NC}"
-    echo -e "${CYAN}║                                            ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo -e "${RED}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║                                            ║${NC}"
+    echo -e "${RED}║   🔥 ${BOLD}AIScan - AGGRESSIVE MODE${NC}${RED} 🔥          ║${NC}"
+    echo -e "${RED}║        Security Deconstructor              ║${NC}"
+    echo -e "${RED}║                                            ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
@@ -41,12 +42,15 @@ show_banner() {
 check_dependencies() {
     local missing_tools=()
     local optional_tools=()
-    
-    # Required tools
-    if ! command -v ollama &> /dev/null; then
-        missing_tools+=("ollama")
+
+    # Check if AI-less mode - skip ollama check
+    if [ "$AILESS_MODE" = false ]; then
+        if ! command -v ollama &> /dev/null; then
+            missing_tools+=("ollama")
+        fi
     fi
     
+    # Required tools
     if ! command -v nmap &> /dev/null; then
         missing_tools+=("nmap")
     fi
@@ -72,16 +76,24 @@ check_dependencies() {
         optional_tools+=("sqlmap")
     fi
     
-    if ! command -v dirb &> /dev/null && ! command -v gobuster &> /dev/null; then
-        optional_tools+=("dirb or gobuster")
+    if ! command -v commix &> /dev/null; then
+        optional_tools+=("commix")
     fi
     
-    if ! command -v wpscan &> /dev/null; then
-        optional_tools+=("wpscan")
+    if ! command -v xsstrike &> /dev/null; then
+        optional_tools+=("xsstrike")
     fi
     
-    if ! command -v sslyze &> /dev/null; then
-        optional_tools+=("sslyze")
+    if ! command -v nuclei &> /dev/null; then
+        optional_tools+=("nuclei")
+    fi
+    
+    if ! command -v ffuf &> /dev/null && ! command -v gobuster &> /dev/null; then
+        optional_tools+=("ffuf or gobuster")
+    fi
+    
+    if ! command -v testssl.sh &> /dev/null; then
+        optional_tools+=("testssl.sh")
     fi
     
     if [ ${#missing_tools[@]} -ne 0 ]; then
@@ -91,23 +103,26 @@ check_dependencies() {
         done
         echo ""
         echo -e "${YELLOW}Installation commands:${NC}"
-        echo "  Ollama:  curl -fsSL https://ollama.com/install.sh | sh"
+        if [[ " ${missing_tools[@]} " =~ " ollama " ]]; then
+            echo "  Ollama:  curl -fsSL https://ollama.com/install.sh | sh"
+            echo "  ${CYAN}(Or use --no-ai flag to skip AI analysis)${NC}"
+        fi
         echo "  Nmap:    sudo apt install nmap"
         echo "  Curl:    sudo apt install curl"
         exit 1
     fi
     
     if [ ${#optional_tools[@]} -ne 0 ]; then
-        echo -e "${YELLOW}⚠ Optional tools not found (recommended):${NC}"
+        echo -e "${YELLOW}⚠ Optional tools not found (for max power):${NC}"
         for tool in "${optional_tools[@]}"; do
             echo -e "   - $tool"
         done
         echo ""
-        echo -e "${CYAN}Install with:${NC}"
-        echo "  sudo apt install whatweb nikto dirb sqlmap"
-        echo "  sudo pip3 install wafw00f sslyze"
-        echo ""
-        echo -e "${YELLOW}Note: WPScan removed due to installation complexity${NC}"
+        echo -e "${CYAN}Install aggressive tools with:${NC}"
+        echo "  sudo apt install nmap whatweb nikto sqlmap ffuf -y"
+        echo "  sudo pip3 install wafw00f commix xsstrike"
+        echo "  GO111MODULE=on go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
+        echo "  git clone --depth 1 https://github.com/drwetter/testssl.sh.git ~/testssl.sh"
         echo ""
         echo -e "${GREEN}Continuing with available tools...${NC}"
         echo ""
@@ -126,7 +141,12 @@ usage() {
     echo "  -m, --model MODEL   Ollama model to use (default: llama3.2)"
     echo "                      Examples: llama3.1, mistral, codellama, gemma2"
     echo "  -q, --quick         Quick scan (skip intensive scans)"
-    echo "  -f, --full          Full scan (includes all tools, may take longer)"
+    echo "  -f, --full          Full AGGRESSIVE scan (all tools, max depth)"
+    echo "  -u, --url URL       Specific URL to test (for injection tests)"
+    echo "  --no-ai             AI-less mode (skip AI analysis, only show scan results)"
+    echo "  --external-ai FILE  Use external AI analysis from file (e.g., from ChatGPT/Claude)"
+    echo "  --external-ai -     Read external AI analysis from stdin (paste and Ctrl+D)"
+    echo "  --ai-only FILE      Skip scanning, only analyze existing results from file"
     echo "  -h, --help          Show this help"
     echo ""
     echo -e "${YELLOW}Configuration:${NC}"
@@ -134,9 +154,12 @@ usage() {
     echo "  Example: echo 'MODEL=\"llama3.1\"' > ~/.aiscan.conf"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
-    echo "  $0 example.com"
-    echo "  $0 192.168.1.1 --quick"
-    echo "  $0 example.com --full"
+    echo "  $0 example.com                                  # Full scan with Ollama AI"
+    echo "  $0 example.com --full                           # Aggressive scan"
+    echo "  $0 example.com --no-ai                          # Scan without AI"
+    echo "  $0 example.com --external-ai analysis.txt       # Use external AI analysis"
+    echo "  $0 example.com --ai-only previous_scan.txt      # Only AI analysis, no scanning"
+    echo "  echo 'analysis' | $0 example.com --external-ai - # Pipe AI analysis"
     echo ""
     exit 1
 }
@@ -145,6 +168,11 @@ usage() {
 TARGET=""
 QUICK_SCAN=false
 FULL_SCAN=false
+SPECIFIC_URL=""
+AILESS_MODE=false
+EXTERNAL_AI_FILE=""
+AI_ONLY_MODE=false
+AI_ONLY_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -159,6 +187,23 @@ while [[ $# -gt 0 ]]; do
         -f|--full)
             FULL_SCAN=true
             shift
+            ;;
+        -u|--url)
+            SPECIFIC_URL="$2"
+            shift 2
+            ;;
+        --no-ai|--noai|--ailess)
+            AILESS_MODE=true
+            shift
+            ;;
+        --external-ai)
+            EXTERNAL_AI_FILE="$2"
+            shift 2
+            ;;
+        --ai-only)
+            AI_ONLY_MODE=true
+            AI_ONLY_FILE="$2"
+            shift 2
             ;;
         -h|--help)
             show_banner
@@ -185,12 +230,218 @@ if [[ -z "$TARGET" ]]; then
     usage
 fi
 
+# Handle AI-only mode
+if [ "$AI_ONLY_MODE" = true ]; then
+    if [ -z "$AI_ONLY_FILE" ] || [ ! -f "$AI_ONLY_FILE" ]; then
+        echo -e "${RED}Error: AI-only mode requires a valid file with scan results${NC}"
+        echo -e "${YELLOW}Usage: $0 <target> --ai-only <scan_results_file>${NC}"
+        exit 1
+    fi
+    
+    echo -e "${CYAN}🤖 AI-ONLY MODE${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${BOLD}${RED}🎯 Target: ${NC}${TARGET}"
+    echo -e "${RED}🤖 AI Model: ${NC}${MODEL}"
+    echo -e "${RED}📄 Scan Data: ${NC}${AI_ONLY_FILE}"
+    echo -e "${YELLOW}⚡ Mode: AI Analysis Only (No Scanning)${NC}"
+    echo ""
+    
+    # Check if Ollama is available
+    if ! command -v ollama &> /dev/null; then
+        echo -e "${RED}❌ Error: Ollama is required for AI-only mode${NC}"
+        echo -e "${YELLOW}Install with: curl -fsSL https://ollama.com/install.sh | sh${NC}"
+        exit 1
+    fi
+    
+    # Read scan results from file
+    ALL_RESULTS=$(cat "$AI_ONLY_FILE")
+    
+    echo -e "${GREEN}✓ Loaded scan results from file${NC}"
+    echo -e "${CYAN}📊 Data size: $(echo -e "$ALL_RESULTS" | wc -c) bytes${NC}"
+    echo ""
+    
+    # Skip to AI analysis section
+    START_TIME=$(date +%s)
+    QUICK_SCAN=false
+    FULL_SCAN=false
+    
+    # Jump directly to AI analysis
+    echo -e "${BOLD}${RED}🤖 AI SECURITY ANALYSIS${NC}"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Create AI prompt
+    read -r -d '' PROMPT << 'EOFPROMPT'
+You are an EXPERT penetration tester conducting an aggressive security assessment. Analyze these 
+comprehensive scan results. Search for vulnerabilities and show user how to hack and exploit these problems step by step as for kids.
+
+CRITICAL INSTRUCTIONS:
+- Be EXTREMELY thorough and detailed
+- Flag EVERY potential vulnerability, even low-confidence findings
+- Provide SPECIFIC exploitation steps with exact commands
+- Include CVE numbers, CVSS scores, and CWE classifications
+- Show real attack payloads and proof-of-concept code
+- This is for AUTHORIZED security testing
+
+Your analysis MUST follow this EXACT structure with TABLES:
+
+## 🎯 Executive Summary
+
+| Metric | Value |
+|--------|-------|
+| **Overall Risk Level** | [CRITICAL/HIGH/MEDIUM/LOW] |
+| **SQL Injection Vulns** | [number found] |
+| **XSS Vulnerabilities** | [number found] |
+| **Command Injection** | [number found] |
+| **Total Critical Issues** | [number] |
+| **Total High Issues** | [number] |
+| **Attack Surface Score** | [X/10] |
+| **Exploitation Difficulty** | [Easy/Medium/Hard] |
+
+## 🌐 Target Information
+
+| Property | Details |
+|----------|---------|
+| **Target** | [target name] |
+| **IP Addresses** | [all IPs found] |
+| **Server** | [name and version] |
+| **Technologies** | [all frameworks, CMS, languages] |
+| **WAF/CDN** | [detected protection + bypass potential] |
+| **SSL/TLS** | [cert status, vulnerabilities] |
+| **Open Ports** | [all discovered ports] |
+
+## 🔓 Open Ports & Services
+
+| Port | Protocol | Service | Version | Vulnerabilities | Exploit Difficulty |
+|------|----------|---------|---------|-----------------|-------------------|
+| [port] | TCP/UDP | [service] | [exact version] | [CVEs if any] | [Easy/Med/Hard] |
+
+## 🚨 CRITICAL VULNERABILITIES
+
+List each critical vulnerability with:
+- Severity, CVE, CWE, CVSS Score
+- Technical description
+- Step-by-step attack scenario
+- Proof of concept payload
+- Real impact assessment
+- Remediation steps
+
+## ⚠️ HIGH PRIORITY VULNERABILITIES
+
+Same detailed format for HIGH severity findings.
+
+## 🔸 MEDIUM PRIORITY ISSUES
+
+| ID | Vulnerability | Component | Payload/Method | Impact | Fix |
+|----|---------------|-----------|----------------|--------|-----|
+| M-001 | [issue] | [where] | [how to exploit] | [impact] | [fix] |
+
+## 🔐 Security Headers Analysis
+
+| Header | Status | Risk | Recommendation |
+|--------|--------|------|----------------|
+| [header] | Present/Missing | [level] | [action] |
+
+## 📋 REMEDIATION ROADMAP
+
+### Immediate Actions (24 hours)
+1. [Action with exact steps]
+
+### Short-term (1 week)
+1. [Action with exact steps]
+
+### Long-term (1 month)
+1. [Action with exact steps]
+
+---
+SCAN DATA TO ANALYZE:
+EOFPROMPT
+
+    FULL_PROMPT="${PROMPT}
+
+TARGET: $TARGET
+SCAN MODE: AI-Only Analysis
+
+$ALL_RESULTS
+"
+    
+    echo -e "${CYAN}🧠 Sending scan results to AI model: ${MODEL}${NC}"
+    echo -e "${YELLOW}⏳ AI Analysis in progress... This may take 1-3 minutes${NC}"
+    echo ""
+    
+    # Call Ollama
+    AI_RESPONSE=$(ollama run "$MODEL" "$FULL_PROMPT" 2>&1)
+    AI_EXIT_CODE=$?
+    
+    if [ $AI_EXIT_CODE -ne 0 ]; then
+        echo -e "${RED}❌ AI Analysis Failed!${NC}"
+        echo -e "${YELLOW}Error details:${NC}"
+        echo "$AI_RESPONSE" | head -20
+        exit 1
+    fi
+    
+    # Display results
+    END_TIME=$(date +%s)
+    TOTAL_TIME=$((END_TIME - START_TIME))
+    MINUTES=$((TOTAL_TIME / 60))
+    SECONDS=$((TOTAL_TIME % 60))
+    
+    echo -e "${GREEN}✓ AI Analysis Complete!${NC}"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "$AI_RESPONSE"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Save report
+    REPORT_FILE="$HOME/aiscan_aionly_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
+    {
+        echo "════════════════════════════════════════════════════════════"
+        echo "               AIScan Security Assessment Report            "
+        echo "                       (AI-Only Mode)                        "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Target:       $TARGET"
+        echo "Date:         $(date)"
+        echo "AI Model:     $MODEL"
+        echo "Analysis Time: ${MINUTES}m ${SECONDS}s"
+        echo "Source File:  $AI_ONLY_FILE"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                      AI ANALYSIS REPORT                     "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "$AI_RESPONSE"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                         END OF REPORT                       "
+        echo "════════════════════════════════════════════════════════════"
+    } > "$REPORT_FILE"
+    
+    echo -e "${GREEN}✅ AI analysis report saved to: ${REPORT_FILE}${NC}"
+    echo -e "${GREEN}Scan completed successfully! (AI-only mode)${NC}"
+    echo ""
+    exit 0
+fi
+
 check_dependencies
 
-echo -e "${BOLD}${BLUE}🎯 Target: ${NC}${TARGET}"
-echo -e "${BLUE}🤖 AI Model: ${NC}${MODEL}"
-echo -e "${BLUE}⚡ Scan Mode: ${NC}$([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full" || echo "Standard"))"
-echo -e "${BLUE}📁 Temp Directory: ${NC}${TEMP_DIR}"
+echo -e "${BOLD}${RED}🎯 Target: ${NC}${TARGET}"
+if [ "$AILESS_MODE" = true ]; then
+    echo -e "${RED}🤖 AI Analysis: ${NC}${YELLOW}DISABLED (AI-less mode)${NC}"
+else
+    echo -e "${RED}🤖 AI Model: ${NC}${MODEL}"
+fi
+echo -e "${RED}⚡ Scan Mode: ${NC}$([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "FULL AGGRESSIVE" || echo "Standard Aggressive"))"
+echo -e "${RED}📁 Temp Directory: ${NC}${TEMP_DIR}"
+echo ""
+echo -e "${YELLOW}⚠️  WARNING: Aggressive scanning mode enabled!${NC}"
+echo -e "${YELLOW}⚠️  This will generate significant traffic and logs.${NC}"
+echo -e "${YELLOW}⚠️  Only use on authorized targets!${NC}"
 echo ""
 echo -e "${CYAN}💡 TIP: Press 's' during any scan to skip it if it's taking too long${NC}"
 echo -e "${CYAN}📊 Progress will be shown for each scan${NC}"
@@ -204,7 +455,7 @@ START_TIME=$(date +%s)
 # Initialize results
 ALL_RESULTS=""
 SCAN_COUNT=0
-TOTAL_SCANS=10
+TOTAL_SCANS=15
 
 # Function to run scan with skip option and progress indicator
 run_scan() {
@@ -257,40 +508,196 @@ run_scan() {
     fi
 }
 
-# 1. WhatWeb Scan
+# Set default URL if not specified
+if [ -z "$SPECIFIC_URL" ]; then
+    SPECIFIC_URL="http://$TARGET"
+fi
+
+# 1. Aggressive Nmap Scan
+NMAP_OUT="$TEMP_DIR/nmap.txt"
+if [ "$QUICK_SCAN" = true ]; then
+    run_scan "Running Nmap (Quick Aggressive Scan)..." \
+             "nmap -T4 -F --script vuln '$TARGET'" \
+             "$NMAP_OUT"
+elif [ "$FULL_SCAN" = true ]; then
+    run_scan "Running Nmap (FULL AGGRESSIVE - All Ports + Scripts)..." \
+             "nmap -T4 -p- -sV -sC --script='vuln,exploit,auth,brute' '$TARGET'" \
+             "$NMAP_OUT"
+else
+    run_scan "Running Nmap (Aggressive Service Detection)..." \
+             "nmap -T4 -sV -sC --script vuln -A '$TARGET'" \
+             "$NMAP_OUT"
+fi
+if [ $? -eq 0 ]; then
+    ALL_RESULTS+="=== NMAP AGGRESSIVE SCAN ===\n"
+    ALL_RESULTS+="$(cat $NMAP_OUT)\n\n"
+fi
+echo ""
+
+# 2. WhatWeb Aggressive
 if command -v whatweb &> /dev/null; then
     WHATWEB_OUT="$TEMP_DIR/whatweb.txt"
-    # Suppress Ruby warnings by redirecting stderr
-    run_scan "Running WhatWeb (Web Technology Detection)..." \
-             "whatweb -v '$TARGET' 2>/dev/null" \
+    run_scan "Running WhatWeb (Aggressive Mode)..." \
+             "whatweb -v -a 3 '$TARGET' 2>/dev/null" \
              "$WHATWEB_OUT"
     if [ $? -eq 0 ]; then
-        ALL_RESULTS+="=== WHATWEB - WEB TECHNOLOGY DETECTION ===\n"
+        ALL_RESULTS+="=== WHATWEB AGGRESSIVE FINGERPRINTING ===\n"
         ALL_RESULTS+="$(cat $WHATWEB_OUT)\n\n"
     fi
     echo ""
 fi
 
-# 2. Nmap Port Scan
-NMAP_OUT="$TEMP_DIR/nmap.txt"
-if [ "$QUICK_SCAN" = true ]; then
-    run_scan "Running Nmap (Quick Port Scan)..." \
-             "nmap -F '$TARGET'" \
-             "$NMAP_OUT"
-else
-    run_scan "Running Nmap (Service Version Detection)..." \
-             "nmap -sV -sC -T4 '$TARGET'" \
-             "$NMAP_OUT"
+# 3. Nikto Aggressive
+if command -v nikto &> /dev/null; then
+    NIKTO_OUT="$TEMP_DIR/nikto.txt"
+    if [ "$QUICK_SCAN" = true ]; then
+        run_scan "Running Nikto (Quick Vuln Scan)..." \
+                 "timeout 180 nikto -h '$TARGET' -Tuning x" \
+                 "$NIKTO_OUT"
+    else
+        run_scan "Running Nikto (Full Aggressive Vulnerability Scan)..." \
+                 "timeout 600 nikto -h '$TARGET' -Tuning 123456789abc -C all" \
+                 "$NIKTO_OUT"
+    fi
+    if [ -s "$NIKTO_OUT" ]; then
+        ALL_RESULTS+="=== NIKTO AGGRESSIVE VULNERABILITY SCAN ===\n"
+        ALL_RESULTS+="$(cat $NIKTO_OUT)\n\n"
+    fi
+    echo ""
 fi
-if [ $? -eq 0 ]; then
-    ALL_RESULTS+="=== NMAP - PORT AND SERVICE SCAN ===\n"
-    ALL_RESULTS+="$(cat $NMAP_OUT)\n\n"
-fi
-echo ""
 
-# 3. HTTP Headers Check
+# 4. SQL Injection Testing with SQLMap (AGGRESSIVE)
+if command -v sqlmap &> /dev/null; then
+    SQLMAP_OUT="$TEMP_DIR/sqlmap.txt"
+    if [ "$QUICK_SCAN" = true ]; then
+        run_scan "Running SQLMap (Quick SQL Injection Test)..." \
+                 "timeout 180 sqlmap -u '$SPECIFIC_URL' --batch --level=2 --risk=2 --threads=5 --random-agent" \
+                 "$SQLMAP_OUT"
+    elif [ "$FULL_SCAN" = true ]; then
+        run_scan "Running SQLMap (FULL AGGRESSIVE - Deep SQL Injection)..." \
+                 "timeout 900 sqlmap -u '$SPECIFIC_URL' --batch --crawl=3 --level=5 --risk=3 --threads=10 --tamper=space2comment --random-agent --technique=BEUSTQ" \
+                 "$SQLMAP_OUT"
+    else
+        run_scan "Running SQLMap (Aggressive SQL Injection Test)..." \
+                 "timeout 300 sqlmap -u '$SPECIFIC_URL' --batch --crawl=2 --level=3 --risk=2 --threads=5 --random-agent" \
+                 "$SQLMAP_OUT"
+    fi
+    if [ -s "$SQLMAP_OUT" ]; then
+        ALL_RESULTS+="=== SQLMAP SQL INJECTION TESTING ===\n"
+        ALL_RESULTS+="$(cat $SQLMAP_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 5. Command Injection with Commix
+if command -v commix &> /dev/null && [ "$FULL_SCAN" = true ]; then
+    COMMIX_OUT="$TEMP_DIR/commix.txt"
+    run_scan "Running Commix (Command Injection Testing)..." \
+             "timeout 300 commix -u '$SPECIFIC_URL' --batch --level=3 --random-agent" \
+             "$COMMIX_OUT"
+    if [ -s "$COMMIX_OUT" ]; then
+        ALL_RESULTS+="=== COMMIX COMMAND INJECTION TESTING ===\n"
+        ALL_RESULTS+="$(cat $COMMIX_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 6. XSS Testing with XSStrike
+if command -v xsstrike &> /dev/null && [ "$FULL_SCAN" = true ]; then
+    XSS_OUT="$TEMP_DIR/xss.txt"
+    run_scan "Running XSStrike (XSS Vulnerability Scanner)..." \
+             "timeout 300 xsstrike -u '$SPECIFIC_URL' --crawl --fuzzer" \
+             "$XSS_OUT"
+    if [ -s "$XSS_OUT" ]; then
+        ALL_RESULTS+="=== XSSTRIKE XSS VULNERABILITY TESTING ===\n"
+        ALL_RESULTS+="$(cat $XSS_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 7. Nuclei - Template based scanning
+if command -v nuclei &> /dev/null; then
+    NUCLEI_OUT="$TEMP_DIR/nuclei.txt"
+    if [ "$QUICK_SCAN" = true ]; then
+        run_scan "Running Nuclei (Critical Templates)..." \
+                 "timeout 180 nuclei -u '$SPECIFIC_URL' -t ~/nuclei-templates/cves/ -silent" \
+                 "$NUCLEI_OUT"
+    else
+        run_scan "Running Nuclei (Template-based Vulnerability Scanner)..." \
+                 "timeout 600 nuclei -u '$SPECIFIC_URL' -t ~/nuclei-templates/ -severity critical,high,medium -silent" \
+                 "$NUCLEI_OUT"
+    fi
+    if [ -s "$NUCLEI_OUT" ]; then
+        ALL_RESULTS+="=== NUCLEI TEMPLATE-BASED SCANNING ===\n"
+        ALL_RESULTS+="$(cat $NUCLEI_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 8. Directory Brute Force
+if [ "$FULL_SCAN" = true ]; then
+    if command -v ffuf &> /dev/null; then
+        FFUF_OUT="$TEMP_DIR/ffuf.txt"
+        run_scan "Running FFUF (Fast Directory Brute Force)..." \
+                 "timeout 300 ffuf -u '$SPECIFIC_URL/FUZZ' -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,403 -t 50 -s" \
+                 "$FFUF_OUT"
+        if [ -s "$FFUF_OUT" ]; then
+            ALL_RESULTS+="=== FFUF DIRECTORY ENUMERATION ===\n"
+            ALL_RESULTS+="$(cat $FFUF_OUT)\n\n"
+        fi
+        echo ""
+    elif command -v gobuster &> /dev/null; then
+        GOBUSTER_OUT="$TEMP_DIR/gobuster.txt"
+        run_scan "Running Gobuster (Directory Enumeration)..." \
+                 "timeout 300 gobuster dir -u '$SPECIFIC_URL' -w /usr/share/wordlists/dirb/common.txt -t 50 -q" \
+                 "$GOBUSTER_OUT"
+        if [ -s "$GOBUSTER_OUT" ]; then
+            ALL_RESULTS+="=== GOBUSTER DIRECTORY ENUMERATION ===\n"
+            ALL_RESULTS+="$(cat $GOBUSTER_OUT)\n\n"
+        fi
+        echo ""
+    fi
+fi
+
+# 9. SSL/TLS Deep Analysis
+if command -v testssl.sh &> /dev/null; then
+    TESTSSL_OUT="$TEMP_DIR/testssl.txt"
+    run_scan "Running TestSSL (Deep SSL/TLS Analysis)..." \
+             "timeout 120 testssl.sh --fast --severity HIGH '$TARGET'" \
+             "$TESTSSL_OUT"
+    if [ -s "$TESTSSL_OUT" ]; then
+        ALL_RESULTS+="=== TESTSSL DEEP SSL/TLS ANALYSIS ===\n"
+        ALL_RESULTS+="$(cat $TESTSSL_OUT)\n\n"
+    fi
+    echo ""
+else
+    SSL_OUT="$TEMP_DIR/ssl.txt"
+    run_scan "Checking SSL/TLS Certificate..." \
+             "echo | openssl s_client -connect '$TARGET:443' -servername '$TARGET' 2>/dev/null | openssl x509 -noout -text" \
+             "$SSL_OUT"
+    if [ -s "$SSL_OUT" ]; then
+        ALL_RESULTS+="=== SSL/TLS CERTIFICATE ===\n"
+        ALL_RESULTS+="$(cat $SSL_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 10. WAF Detection
+if command -v wafw00f &> /dev/null; then
+    WAF_OUT="$TEMP_DIR/waf.txt"
+    run_scan "Running Wafw00f (WAF Detection & Bypass Analysis)..." \
+             "wafw00f 'https://$TARGET' -a" \
+             "$WAF_OUT"
+    if [ $? -eq 0 ]; then
+        ALL_RESULTS+="=== WAF DETECTION & ANALYSIS ===\n"
+        ALL_RESULTS+="$(cat $WAF_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 11. HTTP Headers Analysis
 HEADERS_OUT="$TEMP_DIR/headers.txt"
-run_scan "Checking HTTP Security Headers..." \
+run_scan "Analyzing HTTP Security Headers..." \
          "curl -sI 'http://$TARGET' && curl -sI 'https://$TARGET'" \
          "$HEADERS_OUT"
 if [ $? -eq 0 ]; then
@@ -299,112 +706,53 @@ if [ $? -eq 0 ]; then
 fi
 echo ""
 
-# 4. SSL/TLS Check with SSLyze or OpenSSL
-SSL_OUT="$TEMP_DIR/ssl.txt"
-if command -v sslyze &> /dev/null; then
-    run_scan "Running SSLyze (SSL/TLS Security Analysis)..." \
-             "timeout 60 sslyze --regular '$TARGET'" \
-             "$SSL_OUT"
-else
-    run_scan "Checking SSL/TLS Certificate..." \
-             "echo | openssl s_client -connect '$TARGET:443' -servername '$TARGET' 2>/dev/null | openssl x509 -noout -text" \
-             "$SSL_OUT"
-fi
-if [ -s "$SSL_OUT" ]; then
-    ALL_RESULTS+="=== SSL/TLS SECURITY ANALYSIS ===\n"
-    ALL_RESULTS+="$(cat $SSL_OUT)\n\n"
-fi
-echo ""
-
-# 5. WAF Detection
-if command -v wafw00f &> /dev/null; then
-    WAF_OUT="$TEMP_DIR/waf.txt"
-    run_scan "Running Wafw00f (WAF Detection)..." \
-             "wafw00f 'https://$TARGET'" \
-             "$WAF_OUT"
-    if [ $? -eq 0 ]; then
-        ALL_RESULTS+="=== WAF DETECTION (WAFW00F) ===\n"
-        ALL_RESULTS+="$(cat $WAF_OUT)\n\n"
-    fi
-    echo ""
-fi
-
-# 6. Nikto Web Vulnerability Scan
-if command -v nikto &> /dev/null; then
-    NIKTO_OUT="$TEMP_DIR/nikto.txt"
-    if [ "$QUICK_SCAN" = true ]; then
-        run_scan "Running Nikto (Quick Vulnerability Scan)..." \
-                 "timeout 120 nikto -h '$TARGET' -Tuning x 6" \
-                 "$NIKTO_OUT"
-    else
-        run_scan "Running Nikto (Web Vulnerability Scanner)..." \
-                 "timeout 300 nikto -h '$TARGET'" \
-                 "$NIKTO_OUT"
-    fi
-    if [ -s "$NIKTO_OUT" ]; then
-        ALL_RESULTS+="=== NIKTO - WEB VULNERABILITY SCAN ===\n"
-        ALL_RESULTS+="$(cat $NIKTO_OUT)\n\n"
-    fi
-    echo ""
-fi
-
-# 7. Directory Enumeration
-if [ "$FULL_SCAN" = true ]; then
-    if command -v gobuster &> /dev/null; then
-        DIRB_OUT="$TEMP_DIR/dirb.txt"
-        run_scan "Running Gobuster (Directory Enumeration)..." \
-                 "timeout 180 gobuster dir -u 'http://$TARGET' -w /usr/share/wordlists/dirb/common.txt -q" \
-                 "$DIRB_OUT"
-        if [ -s "$DIRB_OUT" ]; then
-            ALL_RESULTS+="=== DIRECTORY ENUMERATION (GOBUSTER) ===\n"
-            ALL_RESULTS+="$(cat $DIRB_OUT)\n\n"
-        fi
-        echo ""
-    elif command -v dirb &> /dev/null; then
-        DIRB_OUT="$TEMP_DIR/dirb.txt"
-        run_scan "Running Dirb (Directory Enumeration)..." \
-                 "timeout 180 dirb 'http://$TARGET' -S -w" \
-                 "$DIRB_OUT"
-        if [ -s "$DIRB_OUT" ]; then
-            ALL_RESULTS+="=== DIRECTORY ENUMERATION (DIRB) ===\n"
-            ALL_RESULTS+="$(cat $DIRB_OUT)\n\n"
-        fi
-        echo ""
-    fi
-fi
-
-# 8. WordPress Scan (if WordPress detected) - REMOVED DUE TO WPSCAN ISSUES
-# Keeping the check but skipping WPScan
-if [ "$FULL_SCAN" = true ]; then
-    if curl -s "http://$TARGET/wp-login.php" | grep -q "wordpress" 2>/dev/null; then
-        echo -e "${YELLOW}⚠ WordPress detected but WPScan not included (installation issues)${NC}"
-        echo ""
-    fi
-fi
-
-# 9. SQL Injection Test (Quick Test)
-if [ "$FULL_SCAN" = true ] && command -v sqlmap &> /dev/null; then
-    SQLMAP_OUT="$TEMP_DIR/sqlmap.txt"
-    run_scan "Running SQLMap (SQL Injection Quick Test)..." \
-             "timeout 120 sqlmap -u 'http://$TARGET' --batch --crawl=1 --level=1 --risk=1" \
-             "$SQLMAP_OUT"
-    if [ -s "$SQLMAP_OUT" ]; then
-        ALL_RESULTS+="=== SQL INJECTION TEST (SQLMAP) ===\n"
-        ALL_RESULTS+="$(cat $SQLMAP_OUT)\n\n"
-    fi
-    echo ""
-fi
-
-# 10. DNS Information
+# 12. DNS Enumeration
 DNS_OUT="$TEMP_DIR/dns.txt"
-run_scan "Gathering DNS Information..." \
-         "host '$TARGET' && dig '$TARGET' ANY +noall +answer" \
+run_scan "DNS Information Gathering..." \
+         "host '$TARGET' && dig '$TARGET' ANY +noall +answer && dig '$TARGET' AXFR" \
          "$DNS_OUT"
 if [ -s "$DNS_OUT" ]; then
-    ALL_RESULTS+="=== DNS INFORMATION ===\n"
+    ALL_RESULTS+="=== DNS INFORMATION & ENUMERATION ===\n"
     ALL_RESULTS+="$(cat $DNS_OUT)\n\n"
 fi
 echo ""
+
+# 13. Subdomain Enumeration (Full scan only)
+if [ "$FULL_SCAN" = true ] && command -v subfinder &> /dev/null; then
+    SUBDOMAIN_OUT="$TEMP_DIR/subdomains.txt"
+    run_scan "Running Subfinder (Subdomain Enumeration)..." \
+             "timeout 120 subfinder -d '$TARGET' -silent" \
+             "$SUBDOMAIN_OUT"
+    if [ -s "$SUBDOMAIN_OUT" ]; then
+        ALL_RESULTS+="=== SUBDOMAIN ENUMERATION ===\n"
+        ALL_RESULTS+="$(cat $SUBDOMAIN_OUT)\n\n"
+    fi
+    echo ""
+fi
+
+# 14. Robots.txt and Sitemap Analysis
+ROBOTS_OUT="$TEMP_DIR/robots.txt"
+run_scan "Analyzing robots.txt and sitemap..." \
+         "curl -s 'http://$TARGET/robots.txt' && curl -s 'http://$TARGET/sitemap.xml'" \
+         "$ROBOTS_OUT"
+if [ -s "$ROBOTS_OUT" ]; then
+    ALL_RESULTS+="=== ROBOTS.TXT & SITEMAP ANALYSIS ===\n"
+    ALL_RESULTS+="$(cat $ROBOTS_OUT)\n\n"
+fi
+echo ""
+
+# 15. JavaScript Analysis (Full scan)
+if [ "$FULL_SCAN" = true ]; then
+    JS_OUT="$TEMP_DIR/javascript.txt"
+    run_scan "Extracting and Analyzing JavaScript Files..." \
+             "curl -s '$SPECIFIC_URL' | grep -oP 'src=\"\K[^\"]*\.js' | head -10 | xargs -I {} curl -s '{}'" \
+             "$JS_OUT"
+    if [ -s "$JS_OUT" ]; then
+        ALL_RESULTS+="=== JAVASCRIPT ANALYSIS ===\n"
+        ALL_RESULTS+="$(cat $JS_OUT | head -100)\n\n"
+    fi
+    echo ""
+fi
 
 # Calculate total scan time
 END_TIME=$(date +%s)
@@ -414,8 +762,8 @@ SECONDS=$((TOTAL_TIME % 60))
 
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "${BOLD}${BLUE}📊 SCAN RESULTS SUMMARY${NC}"
-echo -e "${BLUE}⏱️  Total scan time: ${MINUTES}m ${SECONDS}s${NC}"
+echo -e "${BOLD}${RED}📊 AGGRESSIVE SCAN RESULTS SUMMARY${NC}"
+echo -e "${RED}⏱️  Total scan time: ${MINUTES}m ${SECONDS}s${NC}"
 echo ""
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
@@ -431,19 +779,31 @@ for tool_file in "$TEMP_DIR"/*.txt; do
         # Smart preview - show most relevant lines
         case "$tool_name" in
             nmap)
-                grep -E "open|filtered|PORT|SERVICE|VERSION" "$tool_file" | head -15
+                grep -E "open|filtered|PORT|SERVICE|VERSION|VULN" "$tool_file" | head -20
                 ;;
             nikto)
-                grep -E "^\+|OSVDB|CVE" "$tool_file" | head -20
+                grep -E "^\+|OSVDB|CVE|INJECTION|XSS" "$tool_file" | head -25
+                ;;
+            sqlmap)
+                grep -iE "vulnerable|injection|parameter|payload|database" "$tool_file" | head -30
+                ;;
+            commix)
+                grep -iE "vulnerable|injection|command|shell" "$tool_file" | head -20
+                ;;
+            xss)
+                grep -iE "vulnerable|XSS|payload|reflected" "$tool_file" | head -20
+                ;;
+            nuclei)
+                cat "$tool_file" | head -30
                 ;;
             headers)
-                grep -iE "Server:|X-|Content-Security|Strict-Transport" "$tool_file" | head -15
+                grep -iE "Server:|X-|Content-Security|Strict-Transport|Missing" "$tool_file" | head -15
                 ;;
-            ssl)
-                grep -E "Not Before|Not After|Subject:|Issuer:|Public Key Algorithm" "$tool_file" | head -10
+            ssl|testssl)
+                grep -iE "VULNERABLE|CRITICAL|HIGH|Certificate|TLS" "$tool_file" | head -15
                 ;;
             *)
-                head -20 "$tool_file"
+                head -25 "$tool_file"
                 ;;
         esac
         echo ""
@@ -458,13 +818,154 @@ fi
 
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "${BOLD}${BLUE}🤖 AI SECURITY ANALYSIS${NC}"
+
+# AI Analysis or Skip
+if [ "$AILESS_MODE" = true ]; then
+    echo -e "${BOLD}${YELLOW}🚫 AI Analysis Skipped (AI-less mode)${NC}"
+    echo ""
+    echo -e "${CYAN}📋 Raw scan results have been collected and displayed above.${NC}"
+    echo -e "${CYAN}💡 To enable AI analysis, run without --no-ai flag${NC}"
+    echo ""
+    
+    # Save report without AI analysis
+    REPORT_FILE="$HOME/aiscan_report_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
+    {
+        echo "════════════════════════════════════════════════════════════"
+        echo "               AIScan Security Assessment Report            "
+        echo "                         (AI-less Mode)                      "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Target:     $TARGET"
+        echo "Date:       $(date)"
+        echo "AI Analysis: DISABLED"
+        echo "Scan Time:  ${MINUTES}m ${SECONDS}s"
+        echo "Scan Mode:  $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard Aggressive"))"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                        SCAN RESULTS                         "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo -e "$ALL_RESULTS"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                         END OF REPORT                       "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "NOTE: This report was generated in AI-less mode."
+        echo "For detailed AI-powered vulnerability analysis and exploitation"
+        echo "guidance, run the scan again without the --no-ai flag."
+    } > "$REPORT_FILE"
+    
+    echo -e "${GREEN}✅ Full report saved to: ${REPORT_FILE}${NC}"
+    echo -e "${CYAN}📁 Temp scan files: $TEMP_DIR (will be cleaned up on exit)${NC}"
+    echo ""
+    echo -e "${GREEN}Scan completed successfully! (AI-less mode)${NC}"
+    echo ""
+    exit 0
+fi
+
+# Handle External AI mode
+if [ -n "$EXTERNAL_AI_FILE" ]; then
+    echo -e "${BOLD}${MAGENTA}🌐 EXTERNAL AI MODE${NC}"
+    echo ""
+    
+    EXTERNAL_AI_RESPONSE=""
+    
+    if [ "$EXTERNAL_AI_FILE" = "-" ]; then
+        echo -e "${CYAN}📝 Paste your AI analysis below (press Ctrl+D when done):${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        EXTERNAL_AI_RESPONSE=$(cat)
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    else
+        if [ ! -f "$EXTERNAL_AI_FILE" ]; then
+            echo -e "${RED}❌ Error: File not found: $EXTERNAL_AI_FILE${NC}"
+            exit 1
+        fi
+        EXTERNAL_AI_RESPONSE=$(cat "$EXTERNAL_AI_FILE")
+        echo -e "${GREEN}✓ Loaded external AI analysis from: $EXTERNAL_AI_FILE${NC}"
+    fi
+    
+    echo ""
+    echo -e "${GREEN}✓ External AI Analysis Loaded!${NC}"
+    echo -e "${CYAN}📊 Analysis size: $(echo -e "$EXTERNAL_AI_RESPONSE" | wc -c) bytes${NC}"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "$EXTERNAL_AI_RESPONSE"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Save full report with external AI
+    REPORT_FILE="$HOME/aiscan_report_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
+    {
+        echo "════════════════════════════════════════════════════════════"
+        echo "               AIScan Security Assessment Report            "
+        echo "                    (External AI Analysis)                   "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Target:     $TARGET"
+        echo "Date:       $(date)"
+        echo "AI Source:  External (ChatGPT/Claude/Gemini/etc.)"
+        echo "Scan Time:  ${MINUTES}m ${SECONDS}s"
+        echo "Scan Mode:  $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard Aggressive"))"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                        SCAN RESULTS                         "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo -e "$ALL_RESULTS"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                 EXTERNAL AI ANALYSIS REPORT                 "
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        echo "$EXTERNAL_AI_RESPONSE"
+        echo ""
+        echo "════════════════════════════════════════════════════════════"
+        echo "                         END OF REPORT                       "
+        echo "════════════════════════════════════════════════════════════"
+    } > "$REPORT_FILE"
+    
+    echo -e "${GREEN}✅ Full report saved to: ${REPORT_FILE}${NC}"
+    echo -e "${CYAN}📁 Temp scan files: $TEMP_DIR (will be cleaned up on exit)${NC}"
+    echo ""
+    echo -e "${BOLD}${RED}⚠️  IMPORTANT REMINDERS:${NC}"
+    echo -e "${YELLOW}   • Only use this tool on systems you have authorization to test${NC}"
+    echo -e "${YELLOW}   • Unauthorized security testing is illegal${NC}"
+    echo -e "${YELLOW}   • Keep this report secure - it contains sensitive information${NC}"
+    echo ""
+    echo -e "${GREEN}Scan completed successfully! (External AI mode)${NC}"
+    echo ""
+    exit 0
+fi
+
+# Continue with AI analysis if not in AI-less mode
+echo -e "${BOLD}${RED}🤖 AI SECURITY DECONSTRUCTION ANALYSIS${NC}"
 echo ""
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# Create comprehensive AI prompt
-PROMPT="You are an expert penetration tester and security analyst. Analyze these comprehensive security scan results for: $TARGET
+# Check if we have any results to analyze
+if [ -z "$ALL_RESULTS" ] || [ "$RESULTS_FOUND" = false ]; then
+    echo -e "${RED}❌ No scan data collected for AI analysis${NC}"
+    echo -e "${YELLOW}Please run the scan again or check if target is reachable${NC}"
+    exit 1
+fi
+
+# Create comprehensive AI prompt for aggressive analysis
+read -r -d '' PROMPT << 'EOFPROMPT'
+You are an EXPERT penetration tester conducting an aggressive security assessment. Analyze these 
+comprehensive scan results. Search for vulnerabilities and show user how to hack and exploit these problems step by step as for kids.
+
+CRITICAL INSTRUCTIONS:
+- Be EXTREMELY thorough and detailed
+- Flag EVERY potential vulnerability, even low-confidence findings
+- Provide SPECIFIC exploitation steps with exact commands
+- Include CVE numbers, CVSS scores, and CWE classifications
+- Show real attack payloads and proof-of-concept code
+- This is for AUTHORIZED security testing
 
 Your analysis MUST follow this EXACT structure with TABLES:
 
@@ -473,283 +974,160 @@ Your analysis MUST follow this EXACT structure with TABLES:
 | Metric | Value |
 |--------|-------|
 | **Overall Risk Level** | [CRITICAL/HIGH/MEDIUM/LOW] |
-| **Total Issues Found** | [number] |
-| **Critical Vulnerabilities** | [number] |
+| **SQL Injection Vulns** | [number found] |
+| **XSS Vulnerabilities** | [number found] |
+| **Command Injection** | [number found] |
+| **Total Critical Issues** | [number] |
+| **Total High Issues** | [number] |
 | **Attack Surface Score** | [X/10] |
-| **Recommendation** | [Immediate action/Review/Monitor] |
+| **Exploitation Difficulty** | [Easy/Medium/Hard] |
 
 ## 🌐 Target Information
 
 | Property | Details |
 |----------|---------|
-| **Target** | $TARGET |
-| **IP Address** | [extract from scans] |
+| **Target** | [target name] |
+| **IP Addresses** | [all IPs found] |
 | **Server** | [name and version] |
-| **Technologies** | [frameworks, CMS, languages] |
-| **WAF/CDN** | [detected protection] |
-| **SSL/TLS** | [cert status, expiry, issuer] |
-| **DNS Records** | [A, AAAA, MX records summary] |
+| **Technologies** | [all frameworks, CMS, languages] |
+| **WAF/CDN** | [detected protection + bypass potential] |
+| **SSL/TLS** | [cert status, vulnerabilities] |
+| **Open Ports** | [all discovered ports] |
 
 ## 🔓 Open Ports & Services
 
-| Port | Protocol | Service | Version | Status | Risk |
-|------|----------|---------|---------|--------|------|
-| 80 | TCP | HTTP | Apache/2.4.41 | Open | MEDIUM |
-| 443 | TCP | HTTPS | Apache/2.4.41 | Open | LOW |
-| 22 | TCP | SSH | OpenSSH 7.6 | Open | MEDIUM |
+| Port | Protocol | Service | Version | Vulnerabilities | Exploit Difficulty |
+|------|----------|---------|---------|-----------------|-------------------|
+| [port] | TCP/UDP | [service] | [exact version] | [CVEs if any] | [Easy/Med/Hard] |
 
-## 🚨 CRITICAL VULNERABILITIES (Immediate Action Required)
+## 🚨 CRITICAL VULNERABILITIES
 
-For each critical vulnerability, use this format:
+List each critical vulnerability with:
+- Severity, CVE, CWE, CVSS Score
+- Technical description
+- Step-by-step attack scenario
+- Proof of concept payload
+- Real impact assessment
+- Remediation steps
 
-### [VULN-001] [Vulnerability Name]
+## ⚠️ HIGH PRIORITY VULNERABILITIES
 
-| Field | Details |
-|-------|---------|
-| **Severity** | CRITICAL |
-| **CVE** | [CVE-XXXX-XXXXX if applicable] |
-| **Affected Component** | [service/port/application] |
-| **CVSS Score** | [score if known] |
-
-**Description:**
-[Brief explanation of the vulnerability]
-
-**Attack Scenario (How to Exploit):**
-[Step 1] [First step of exploitation]
-[Step 2] [Second step with specific commands]
-[Step 3] [Third step showing impact]
-
-**Impact:**
-- [What attacker can achieve - data access]
-- [Systems at risk - lateral movement]
-- [Business impact - financial/reputation]
-
-**Remediation:**
-- [Specific fix with commands or configuration]
-- [Verification method to confirm fix]
-- [Additional hardening recommendations]
-
----
-
-## ⚠️ HIGH PRIORITY ISSUES
-
-### [VULN-002] [Issue Name]
-
-| Field | Details |
-|-------|---------|
-| **Severity** | HIGH |
-| **Category** | [Misconfiguration/Outdated/Exposure] |
-| **Component** | [affected system] |
-
-**Attack Vector:**
-[How this can be exploited]
-
-**Fix:**
-[Specific remediation steps]
-
----
+Same detailed format for HIGH severity findings.
 
 ## 🔸 MEDIUM PRIORITY ISSUES
 
-| ID | Issue | Component | Attack Method | Fix |
-|----|-------|-----------|---------------|-----|
-| M-001 | [issue] | [component] | [brief exploit method] | [quick fix] |
-| M-002 | [issue] | [component] | [brief exploit method] | [quick fix] |
+| ID | Vulnerability | Component | Payload/Method | Impact | Fix |
+|----|---------------|-----------|----------------|--------|-----|
+| M-001 | [issue] | [where] | [how to exploit] | [impact] | [fix] |
 
-## ℹ️ INFORMATIONAL / BEST PRACTICES
+## 🔐 Security Headers Analysis
 
-| ID | Finding | Recommendation |
-|----|---------|----------------|
-| I-001 | [observation] | [improvement suggestion] |
-| I-002 | [observation] | [improvement suggestion] |
+| Header | Status | Risk | Recommendation |
+|--------|--------|------|----------------|
+| [header] | Present/Missing | [level] | [action] |
 
-## 🎯 Attack Surface Analysis
+## 📋 REMEDIATION ROADMAP
 
-### Potential Attack Vectors Identified:
+### Immediate Actions (24 hours)
+1. [Action with exact steps]
 
-| Vector | Method | Tools Used | Difficulty | Impact |
-|--------|--------|------------|------------|--------|
-| [Vector 1] | [exploitation method] | [tool names] | [Easy/Medium/Hard] | [High/Med/Low] |
-| [Vector 2] | [exploitation method] | [tool names] | [Easy/Medium/Hard] | [High/Med/Low] |
+### Short-term (1 week)
+1. [Action with exact steps]
 
-### Attack Chain Scenarios:
-
-**Scenario 1: [Attack Type]**
-- Step 1: Reconnaissance - [what attacker discovers]
-- Step 2: Initial Access - [how they get in]
-- Step 3: Privilege Escalation - [how they gain more access]
-- Step 4: Data Exfiltration - [what they can steal]
-
-## 🛡️ Prioritized Remediation Plan
-
-| Priority | Action | Component | Effort | Impact Reduction |
-|----------|--------|-----------|--------|------------------|
-| 1 | [Most critical fix] | [system] | [Low/Med/High] | [percentage] |
-| 2 | [Second priority] | [system] | [Low/Med/High] | [percentage] |
-| 3 | [Third priority] | [system] | [Low/Med/High] | [percentage] |
-
-### Detailed Remediation Steps:
-
-**Priority 1: [Action]**
-Commands to fix:
-[specific bash/config commands here]
-
-**Priority 2: [Action]**
-Commands to fix:
-[specific bash/config commands here]
-
-## 🔍 Security Headers Analysis
-
-| Header | Status | Value | Recommendation |
-|--------|--------|-------|----------------|
-| Content-Security-Policy | ❌ Missing | - | Add CSP header |
-| X-Frame-Options | ✅ Present | SAMEORIGIN | Good |
-| Strict-Transport-Security | ❌ Missing | - | Add HSTS |
-| X-Content-Type-Options | ❌ Missing | - | Add nosniff |
-
-## 📊 Security Posture Score
-
-| Category | Score | Weight |
-|----------|-------|--------|
-| Port Security | [X/10] | 20% |
-| Service Hardening | [X/10] | 25% |
-| Web Security | [X/10] | 25% |
-| SSL/TLS Config | [X/10] | 15% |
-| Headers & Policies | [X/10] | 15% |
-| **TOTAL SCORE** | **[X/10]** | **100%** |
-
-## 🎓 Learning Points
-
-### Understanding the Vulnerabilities:
-
-**[Main vulnerability type]**
-- Why it exists: [technical explanation]
-- Why it's dangerous: [real-world impact]
-- How attackers find it: [reconnaissance methods]
-- How they exploit it: [exploitation techniques with examples]
-
-**[Second vulnerability type]**
-- Why it exists: [technical explanation]
-- Why it's dangerous: [real-world impact]
-- How attackers find it: [reconnaissance methods]
-- How they exploit it: [exploitation techniques]
-
-## 📋 Quick Action Checklist
-
-- [ ] Patch critical vulnerabilities within 24 hours
-- [ ] Update [specific software] to version [X.X]
-- [ ] Configure [specific security control]
-- [ ] Review and restrict [specific service/port]
-- [ ] Implement [specific security header]
+### Long-term (1 month)
+1. [Action with exact steps]
 
 ---
+SCAN DATA TO ANALYZE:
+EOFPROMPT
 
-**FINAL VERDICT:** [Write EXACTLY either 'VULNERABILITIES FOUND' or 'NO CRITICAL ISSUES']
+# Append scan results to prompt
+FULL_PROMPT="${PROMPT}
 
-**Confidence Level:** [High/Medium/Low] - Based on scan completeness
+TARGET: $TARGET
+SCAN MODE: $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard"))
 
-COMPREHENSIVE SCAN DATA:
 $ALL_RESULTS
+"
 
-IMPORTANT INSTRUCTIONS:
-- Be VERY specific with version numbers and CVEs
-- Show REAL attack commands and methods (educational purposes)
-- Use proper table formatting (Markdown tables)
-- For each vulnerability, explain HOW an attacker would exploit it step-by-step
-- Include actual exploitation tools (metasploit, sqlmap, etc.) where relevant
-- Provide copy-paste ready fix commands
-- Be technical and detailed - this is for security professionals"
+# Save prompt to file for debugging
+echo -e "$FULL_PROMPT" > "$TEMP_DIR/ai_prompt.txt"
 
-echo -e "${BLUE}🤖 Analyzing all scan results with $MODEL (this may take a moment)...${NC}"
+echo -e "${CYAN}🧠 Sending scan results to AI model: ${MODEL}${NC}"
+echo -e "${CYAN}📊 Data size: $(echo -e "$ALL_RESULTS" | wc -c) bytes${NC}"
+echo ""
+echo -e "${YELLOW}⏳ AI Analysis in progress... This may take 1-3 minutes${NC}"
 echo ""
 
-# Run AI analysis with error handling
-AI_RESPONSE=$(echo "$PROMPT" | ollama run "$MODEL" 2>&1)
+# Call Ollama API with the comprehensive prompt
+AI_RESPONSE=$(ollama run "$MODEL" "$FULL_PROMPT" 2>&1)
 AI_EXIT_CODE=$?
 
+# Check if AI analysis was successful
 if [ $AI_EXIT_CODE -ne 0 ]; then
-    echo -e "${RED}❌ Error: Ollama analysis failed${NC}"
-    echo -e "${YELLOW}Troubleshooting:${NC}"
-    echo "  1. Check if Ollama is running: ollama list"
-    echo "  2. Pull the model: ollama pull $MODEL"
-    echo "  3. Try a different model: aiscan $TARGET -m llama3.2"
+    echo -e "${RED}❌ AI Analysis Failed!${NC}"
+    echo -e "${YELLOW}Error details:${NC}"
+    echo "$AI_RESPONSE" | head -20
     echo ""
-    echo -e "${RED}Error details:${NC}"
-    echo "$AI_RESPONSE"
+    echo -e "${YELLOW}Troubleshooting:${NC}"
+    echo "1. Check if model is available: ollama list"
+    echo "2. Pull the model if needed: ollama pull $MODEL"
+    echo "3. Try a different model with: $0 $TARGET -m llama3.2"
+    echo "4. Check ollama service: systemctl status ollama (if using systemd)"
+    echo "5. Or run in AI-less mode: $0 $TARGET --no-ai"
+    echo ""
+    echo -e "${CYAN}💡 Your scan results are saved in: $TEMP_DIR/${NC}"
+    echo -e "${CYAN}💡 AI prompt saved to: $TEMP_DIR/ai_prompt.txt${NC}"
     exit 1
 fi
 
-# Check if response is empty
-if [ -z "$AI_RESPONSE" ]; then
-    echo -e "${RED}❌ Error: AI returned empty response${NC}"
-    echo "Try using a different model or check Ollama status."
-    exit 1
-fi
-
-# Display AI analysis
+# Display AI Analysis
+echo -e "${GREEN}✓ AI Analysis Complete!${NC}"
+echo ""
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 echo "$AI_RESPONSE"
 echo ""
-
-# Save full report to file
-REPORT_FILE="aiscan_${TARGET//[^a-zA-Z0-9]/_}_$(date +%Y%m%d_%H%M%S).txt"
-{
-    echo "AIScan Security Report"
-    echo "======================"
-    echo "Target: $TARGET"
-    echo "Scan Date: $(date)"
-    echo "Model: $MODEL"
-    echo "Scan Duration: ${MINUTES}m ${SECONDS}s"
-    echo ""
-    echo "=== AI ANALYSIS ==="
-    echo "$AI_RESPONSE"
-    echo ""
-    echo "=== RAW SCAN DATA ==="
-    for tool_file in "$TEMP_DIR"/*.txt; do
-        if [ -f "$tool_file" ] && [ -s "$tool_file" ]; then
-            tool_name=$(basename "$tool_file" .txt)
-            echo ""
-            echo "=== ${tool_name^^} ==="
-            cat "$tool_file"
-        fi
-    done
-} > "$REPORT_FILE"
-
-echo -e "${GREEN}📄 Full report saved to: ${BOLD}$REPORT_FILE${NC}"
-echo ""
-
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# Final verdict with detailed alert
-if echo "$AI_RESPONSE" | grep -qi "VULNERABILITIES FOUND"; then
-    echo -e "${RED}╔═══════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║                                           ║${NC}"
-    echo -e "${RED}║    🚨 🚨  VULNERABILITIES FOUND  🚨 🚨    ║${NC}"
-    echo -e "${RED}║                                           ║${NC}"
-    echo -e "${RED}║      ⚠️  IMMEDIATE ACTION REQUIRED  ⚠️     ║${NC}"
-    echo -e "${RED}║                                           ║${NC}"
-    echo -e "${RED}║  Review the findings above and apply     ║${NC}"
-    echo -e "${RED}║  security patches immediately            ║${NC}"
-    echo -e "${RED}║                                           ║${NC}"
-    echo -e "${RED}╚═══════════════════════════════════════════╝${NC}"
-    exit 1
-elif echo "$AI_RESPONSE" | grep -qi "NO CRITICAL ISSUES"; then
-    echo -e "${GREEN}╔═══════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                           ║${NC}"
-    echo -e "${GREEN}║      ✅  NO CRITICAL ISSUES FOUND  ✅      ║${NC}"
-    echo -e "${GREEN}║                                           ║${NC}"
-    echo -e "${GREEN}║    System appears to be secure, but      ║${NC}"
-    echo -e "${GREEN}║    review recommendations above          ║${NC}"
-    echo -e "${GREEN}║                                           ║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════╝${NC}"
-    exit 0
-else
-    echo -e "${YELLOW}╔═══════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║                                           ║${NC}"
-    echo -e "${YELLOW}║       ⚠️  MANUAL REVIEW REQUIRED  ⚠️       ║${NC}"
-    echo -e "${YELLOW}║                                           ║${NC}"
-    echo -e "${YELLOW}║  Check the analysis above carefully      ║${NC}"
-    echo -e "${YELLOW}║                                           ║${NC}"
-    echo -e "${YELLOW}╚═══════════════════════════════════════════╝${NC}"
-    exit 0
-fi
+# Save full report
+REPORT_FILE="$HOME/aiscan_report_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
+{
+    echo "════════════════════════════════════════════════════════════"
+    echo "               AIScan Security Assessment Report            "
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "Target:     $TARGET"
+    echo "Date:       $(date)"
+    echo "AI Model:   $MODEL"
+    echo "Scan Time:  ${MINUTES}m ${SECONDS}s"
+    echo "Scan Mode:  $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard Aggressive"))"
+    echo ""
+    echo "════════════════════════════════════════════════════════════"
+    echo "                        SCAN RESULTS                         "
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo -e "$ALL_RESULTS"
+    echo ""
+    echo "════════════════════════════════════════════════════════════"
+    echo "                      AI ANALYSIS REPORT                     "
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "$AI_RESPONSE"
+    echo ""
+    echo "════════════════════════════════════════════════════════════"
+    echo "                         END OF REPORT                       "
+    echo "════════════════════════════════════════════════════════════"
+} > "$REPORT_FILE"
+
+echo -e "${GREEN}✅ Full report saved to: ${REPORT_FILE}${NC}"
+echo -e "${CYAN}📁 Temp scan files: $TEMP_DIR (will be cleaned up on exit)${NC}"
+echo ""
+echo -e "${BOLD}${RED}⚠️  IMPORTANT REMINDERS:${NC}"
+echo -e "${YELLOW}   • Only use this tool on systems you have authorization to test${NC}"
+echo -e "${YELLOW}   • Unauthorized security testing is illegal${NC}"
+echo -e "${YELLOW}   • Keep this report secure - it contains sensitive information${NC}"
+echo ""
+echo -e "${GREEN}Scan completed successfully!${NC}"
+echo ""
