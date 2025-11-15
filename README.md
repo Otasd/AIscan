@@ -1,374 +1,370 @@
-# 🔍 AIScan - AI-Powered Security Scanner
+# 🔥 AIScan - AI-Powered Security Scanner
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Bash](https://img.shields.io/badge/Bash-5.0+-green.svg)](https://www.gnu.org/software/bash/)
-[![Ollama](https://img.shields.io/badge/Ollama-Required-blue.svg)](https://ollama.ai)
+![Version](https://img.shields.io/badge/version-2.0-red)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Bash](https://img.shields.io/badge/bash-5.0+-green)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 
-> An intelligent automated security scanner that combines multiple penetration testing tools with AI analysis powered by Ollama.
+**AIScan** is an aggressive automated security scanner with AI-powered vulnerability analysis. It integrates multiple security tools (Nmap, Nikto, SQLMap, etc.) and uses AI (via Ollama) to provide detailed exploitation guidance and remediation steps.
 
-## ✨ Features
+```
+╔════════════════════════════════════════════╗
+║                                            ║
+║   🔥 AIScan - AGGRESSIVE MODE 🔥          ║
+║        Security Deconstructor              ║
+║                                            ║
+╚════════════════════════════════════════════╝
+```
 
-- 🤖 **AI-Powered Analysis** - Uses Ollama LLMs to intelligently analyze scan results
-- 🛠️ **Multi-Tool Integration** - Combines 9+ security scanning tools
-- 📊 **Structured Reports** - Beautiful table-based output with detailed attack scenarios
-- ⚡ **Flexible Scanning** - Quick, Standard, and Full scan modes
-- ⏭️ **Interactive Controls** - Skip slow scans on-the-fly with 's' key
-- 📄 **Auto-Save Reports** - Saves complete reports to timestamped files
-- 🎯 **Attack Vector Analysis** - Shows HOW vulnerabilities can be exploited
-- 🔒 **Educational** - Explains vulnerabilities and exploitation techniques
+## ⚡ Features
 
-## 🎬 Demo
+- 🎯 **15+ Security Tools Integration**: Nmap, Nikto, SQLMap, Nuclei, WhatWeb, and more
+- 🤖 **AI-Powered Analysis**: Uses Ollama for detailed vulnerability analysis and exploitation guidance
+- 📊 **Multiple Scan Modes**: Quick, Standard, and Full Aggressive scanning
+- 📋 **Batch Scanning**: Scan multiple targets from a file
+- 📝 **Comprehensive Logging**: Save all scan results to organized log files
+- 🚫 **Flexible AI Options**: AI-less mode, external AI analysis, or Ollama integration
+- ⚡ **Progress Indicators**: Real-time progress with skip functionality
+- 🎨 **Beautiful Output**: Color-coded results with formatted tables
+
+## 📦 Installation
+
+### Prerequisites
+
+**Required:**
+- Bash 5.0+
+- Nmap
+- Curl
+- Ollama (optional, only for AI analysis)
+
+**Optional (for maximum power):**
+- WhatWeb
+- Nikto
+- SQLMap
+- Nuclei
+- Wafw00f
+- Commix
+- XSStrike
+- FFUF/Gobuster
+- TestSSL
+
+### Quick Install
 
 ```bash
-$ aiscan example.com
+# Clone the repository
+git clone https://github.com/yourusername/aiscan.git
+cd aiscan
 
+# Make executable
+chmod +x aiscan
+
+# Install dependencies (Debian/Ubuntu)
+sudo apt update
+sudo apt install -y nmap curl whatweb nikto sqlmap ffuf
+
+# Install Ollama (for AI analysis)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull AI model
+ollama pull llama3.2
+```
+
+### Advanced Tool Installation
+
+```bash
+# Python-based tools
+sudo pip3 install wafw00f commix xsstrike
+
+# Nuclei (Go required)
+GO111MODULE=on go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+# TestSSL
+git clone --depth 1 https://github.com/drwetter/testssl.sh.git ~/testssl.sh
+```
+
+## 🚀 Usage
+
+### Basic Scanning
+
+```bash
+# Standard scan with AI analysis
+./aiscan example.com
+
+# Quick scan (fast, less intensive)
+./aiscan example.com --quick
+
+# Full aggressive scan
+./aiscan example.com --full
+
+# Scan without AI analysis
+./aiscan example.com --no-ai
+```
+
+### Advanced Options
+
+```bash
+# Custom AI model
+./aiscan example.com -m llama3.1
+
+# Specific URL for injection tests
+./aiscan example.com -u 'http://example.com/page.php?id=1'
+
+# Save logs to custom directory
+./aiscan example.com -o ./my_scans
+
+# Combine options
+./aiscan example.com --full --no-ai -o ./results
+```
+
+### Batch Scanning
+
+```bash
+# Create target list
+cat > targets.txt << EOF
+example.com
+google.com
+github.com
+EOF
+
+# Scan all targets
+./aiscan -l targets.txt --no-ai -o ./batch_results
+
+# Full aggressive batch scan
+./aiscan -l targets.txt --full -o ./full_results
+```
+
+### AI Modes
+
+```bash
+# Standard mode (with Ollama)
+./aiscan example.com
+
+# AI-less mode (skip AI analysis)
+./aiscan example.com --no-ai
+
+# External AI analysis (from ChatGPT/Claude)
+./aiscan example.com --external-ai analysis.txt
+
+# Pipe external AI analysis
+echo "AI analysis here" | ./aiscan example.com --external-ai -
+
+# AI-only mode (analyze existing scan results)
+./aiscan example.com --ai-only previous_scan.txt
+```
+
+## 📊 Scan Modes
+
+| Mode | Description | Ports Scanned | Time Estimate | AI Analysis |
+|------|-------------|---------------|---------------|-------------|
+| **Quick** (`-q`) | Fast reconnaissance | Top 100 | 3-5 min | Optional |
+| **Standard** (default) | Balanced scanning | Top 200 | 5-10 min | Yes |
+| **Full** (`-f`) | Comprehensive scan | Top 1000 | 15-30 min | Yes |
+
+## 🛠️ Tools Used
+
+AIScan integrates the following security tools:
+
+| Tool | Purpose | Required |
+|------|---------|----------|
+| **Nmap** | Port scanning & service detection | ✅ Yes |
+| **Nikto** | Web server vulnerability scanning | ⭐ Recommended |
+| **SQLMap** | SQL injection testing | ⭐ Recommended |
+| **WhatWeb** | Web technology fingerprinting | ⭐ Recommended |
+| **Nuclei** | Template-based vulnerability scanning | ⭐ Recommended |
+| **Wafw00f** | WAF detection | ⚪ Optional |
+| **Commix** | Command injection testing | ⚪ Optional |
+| **XSStrike** | XSS vulnerability detection | ⚪ Optional |
+| **FFUF/Gobuster** | Directory brute forcing | ⚪ Optional |
+| **TestSSL** | SSL/TLS security analysis | ⚪ Optional |
+
+## 📝 Configuration
+
+Create a config file for persistent settings:
+
+```bash
+# Create config file
+cat > ~/.aiscan.conf << EOF
+# Default AI model
+MODEL="llama3.2"
+
+# Default output directory
+OUTPUT_DIR="$HOME/security_scans"
+
+# Default scan mode (quick/standard/full)
+# QUICK_SCAN=true
+# FULL_SCAN=true
+EOF
+```
+
+## 📄 Output Examples
+
+### Console Output
+
+```
 🎯 Target: example.com
 🤖 AI Model: llama3.2
-⚡ Scan Mode: Standard
+⚡ Scan Mode: Standard Aggressive
+📁 Temp Directory: /tmp/aiscan_12345
 
-[1/10] Running WhatWeb...
-✓ Complete (2s)
+[1/15] Running Nmap (Standard - Top 200 Ports + Vuln Scripts)...
+✓ Complete (45s)
 
-[2/10] Running Nmap...
-✓ Complete (8s)
+[2/15] Running WhatWeb (Aggressive Mode)...
+✓ Complete (12s)
 
-...
-
-📊 SCAN RESULTS SUMMARY
-⏱️  Total scan time: 1m 45s
+━━━ NMAP ━━━
+PORT    STATE SERVICE  VERSION
+80/tcp  open  http     nginx 1.18.0
+443/tcp open  ssl/http nginx 1.18.0
 
 🤖 AI SECURITY ANALYSIS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ## 🎯 Executive Summary
-
 | Metric | Value |
 |--------|-------|
-| Overall Risk Level | HIGH |
-| Critical Vulnerabilities | 2 |
-| Attack Surface Score | 6.5/10 |
-
+| **Overall Risk Level** | MEDIUM |
+| **Total Critical Issues** | 0 |
+| **Total High Issues** | 2 |
 ...
-
-🚨 VULNERABILITIES FOUND 🚨
 ```
 
-## 🚀 Quick Start
+### Log File Structure
 
-### Prerequisites
+```
+~/aiscan_logs/
+├── example.com_20241115_143000.log
+│   ├── NMAP results
+│   ├── WhatWeb results
+│   ├── Nikto results
+│   ├── SQLMap results
+│   ├── AI Analysis
+│   └── Summary report
+├── google.com_20241115_144000.log
+└── github.com_20241115_145000.log
+```
 
-- Linux/Unix system
-- Bash 5.0+
-- Root/sudo access (for some scans)
+## 🔒 Security & Ethics
 
-### Installation
+**⚠️ IMPORTANT WARNINGS:**
+
+- ✅ **Only scan systems you own or have explicit written permission to test**
+- ❌ **Unauthorized security testing is ILLEGAL**
+- 🔐 **Keep scan reports secure - they contain sensitive information**
+- 📋 **Document your authorization before scanning**
+- ⚖️ **Respect rate limits and don't DoS targets**
+
+This tool is designed for:
+- ✅ Authorized penetration testing
+- ✅ Security audits on your own systems
+- ✅ Bug bounty programs (with permission)
+- ✅ Educational purposes in controlled environments
+
+## 🎓 AI Analysis Features
+
+The AI analysis provides:
+
+- 🎯 **Executive Summary**: Risk level, vulnerability counts, attack surface score
+- 🌐 **Target Information**: Technologies, server details, open ports
+- 🚨 **Critical Vulnerabilities**: With CVE numbers, CVSS scores, and exploitation steps
+- ⚠️ **High Priority Issues**: Detailed technical descriptions
+- 🔸 **Medium Priority Issues**: Tabulated findings
+- 🔐 **Security Headers Analysis**: Missing headers and recommendations
+- 📋 **Remediation Roadmap**: Prioritized action items with exact commands
+
+## 🤖 Supported AI Models
+
+Any Ollama model can be used. Popular choices:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/yourusername/aiscan.git
-cd aiscan
+# Install models
+ollama pull llama3.2          # Fast, good balance
+ollama pull llama3.1:70b      # More detailed analysis
+ollama pull mistral           # Alternative option
+ollama pull codellama         # Good for code analysis
+ollama pull gemma2            # Lightweight option
 
-# 2. Install dependencies
-sudo apt update
-sudo apt install nmap whatweb nikto curl dnsutils dirb sqlmap gobuster -y
-
-# 3. Install Python tools
-sudo pip3 install wafw00f sslyze
-
-# 4. Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 5. Pull an AI model
-ollama pull llama3.2
-
-# 6. Make executable and install
-chmod +x aiscan
-sudo mv aiscan /usr/local/bin/
-
-# 7. Verify installation
-aiscan --help
-```
-
-## 📖 Usage
-
-### Basic Commands
-
-```bash
-# Standard scan
-aiscan example.com
-
-# Quick scan (faster, less thorough)
-aiscan example.com --quick
-
-# Full scan (comprehensive, includes all tools)
-aiscan example.com --full
-
-# Use specific AI model
-aiscan example.com -m llama3.1
-
-# Scan IP address
-aiscan 192.168.1.1
-```
-
-### Configuration
-
-Create a config file for persistent settings:
-
-```bash
-# Set default model
-echo 'MODEL="llama3.1"' > ~/.aiscan.conf
-```
-
-### Interactive Features
-
-- **Skip Scans**: Press `s` during any scan to skip it if it's taking too long
-- **Real-time Progress**: Watch live progress with spinner and elapsed time
-- **Auto-save**: Reports automatically saved to `aiscan_target_timestamp.txt`
-
-## 🛠️ Integrated Tools
-
-| Tool | Purpose | Required |
-|------|---------|----------|
-| **Nmap** | Port scanning & service detection | ✅ Yes |
-| **WhatWeb** | Web technology fingerprinting | ⚠️ Recommended |
-| **Nikto** | Web vulnerability scanning | ⚠️ Recommended |
-| **Wafw00f** | WAF/CDN detection | ⚠️ Optional |
-| **SSLyze** | SSL/TLS security analysis | ⚠️ Optional |
-| **Dirb/Gobuster** | Directory enumeration | ⚠️ Optional |
-| **SQLMap** | SQL injection testing | ⚠️ Optional |
-| **cURL** | HTTP header analysis | ✅ Yes |
-| **OpenSSL** | Certificate inspection | ✅ Yes |
-| **dig/host** | DNS information gathering | ✅ Yes |
-
-## 📊 Output Structure
-
-The AI generates comprehensive reports with:
-
-### 1. Executive Summary
-- Overall risk level (CRITICAL/HIGH/MEDIUM/LOW)
-- Total vulnerabilities found
-- Attack surface score
-- Immediate action recommendations
-
-### 2. Target Information
-- IP addresses, DNS records
-- Web server and technology stack
-- WAF/CDN detection
-- SSL/TLS certificate details
-
-### 3. Open Ports & Services
-- All discovered open ports
-- Service versions
-- Risk assessment per service
-
-### 4. Vulnerability Analysis
-For each vulnerability:
-- **Severity rating** (CRITICAL/HIGH/MEDIUM/LOW)
-- **CVE/CVSS** scores (when applicable)
-- **Attack Scenario** - Step-by-step exploitation guide
-- **Impact** - What attacker can achieve
-- **Remediation** - Specific fix commands
-
-### 5. Attack Surface Analysis
-- Potential attack vectors with difficulty ratings
-- Attack chain scenarios
-- Tools and techniques used by attackers
-
-### 6. Security Headers
-- Missing/present security headers
-- Recommendations for each
-
-### 7. Remediation Plan
-- Prioritized fixes with effort estimates
-- Copy-paste ready commands
-- Verification steps
-
-### 8. Security Score
-- Weighted scoring across multiple categories
-- Overall posture rating (X/10)
-
-## 🎓 Educational Mode
-
-AIScan doesn't just find vulnerabilities—it teaches you about them:
-
-- **Why vulnerabilities exist** - Technical explanations
-- **How attackers find them** - Reconnaissance techniques
-- **How they exploit them** - Real exploitation methods with tools
-- **Real-world impact** - Business and security implications
-
-## 🔧 Advanced Usage
-
-### Custom Model Configuration
-
-```bash
-# Try different models for different use cases
-aiscan target.com -m llama3.3      # Latest, most capable
-aiscan target.com -m mistral       # Fast alternative
-aiscan target.com -m codellama     # Good for technical analysis
-aiscan target.com -m gemma2        # Efficient and quick
-```
-
-### Scan Modes Comparison
-
-| Mode | Speed | Tools Used | Best For |
-|------|-------|------------|----------|
-| **Quick** | ~2-5 min | Core tools only | Initial reconnaissance |
-| **Standard** | ~5-10 min | Most tools | Regular security audits |
-| **Full** | ~15-30 min | All tools including brute-force | Comprehensive pentest |
-
-### CI/CD Integration
-
-```bash
-#!/bin/bash
-# Example CI/CD security check
-
-aiscan production-site.com --quick
-
-if [ $? -eq 1 ]; then
-    echo "CRITICAL vulnerabilities found!"
-    # Send alert, fail pipeline, etc.
-    exit 1
-fi
-```
-
-## 🎯 Example Reports
-
-### Vulnerability Report Sample
-
-```
-[VULN-001] Outdated Apache Server
-
-| Field | Details |
-|-------|---------|
-| Severity | CRITICAL |
-| CVE | CVE-2024-12345 |
-| Component | Apache 2.4.41 |
-| CVSS Score | 9.8 |
-
-Attack Scenario (How to Exploit):
-[Step 1] Attacker discovers Apache version via banner grabbing
-[Step 2] Searches exploit-db for known exploits
-[Step 3] Uses Metasploit module: exploit/linux/http/apache_mod_cgi
-[Step 4] Gains remote code execution as www-data user
-
-Impact:
-- Remote code execution on web server
-- Access to application database
-- Potential lateral movement to internal network
-
-Remediation:
-- Update Apache to version 2.4.52+
-  $ sudo apt update
-  $ sudo apt install apache2
-  $ sudo systemctl restart apache2
+# Use custom model
+./aiscan example.com -m mistral
 ```
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### Nmap freezing?
+- Use `--quick` mode for faster scans
+- Press 's' to skip slow scans
+- Script automatically limits to common ports
 
-**"Ollama not found"**
+### Ollama not found?
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2
+
+# Or use AI-less mode
+./aiscan example.com --no-ai
 ```
 
-**"Tool not found" errors**
+### Permission denied?
 ```bash
-# Install missing tools
-sudo apt install nmap whatweb nikto
-sudo pip3 install wafw00f sslyze
+# Make script executable
+chmod +x aiscan
+
+# Some tools need sudo
+sudo ./aiscan example.com
 ```
 
-**Scans hanging/timing out**
+### Tool not found?
 ```bash
-# Use quick mode
-aiscan target.com --quick
+# Check which tools are missing
+./aiscan --help
 
-# Or press 's' to skip stuck scans
+# Install missing tools (Ubuntu/Debian)
+sudo apt install nmap nikto sqlmap whatweb
+
+# Or run without optional tools
+./aiscan example.com --quick --no-ai
 ```
 
-**Permission denied errors**
-```bash
-# Some scans need root
-sudo aiscan target.com
-```
+## 📈 Roadmap
 
-## ⚠️ Legal Disclaimer
-
-**IMPORTANT**: Only use AIScan on systems you own or have explicit written permission to test.
-
-- ✅ Authorized penetration testing
-- ✅ Your own infrastructure
-- ✅ Bug bounty programs (follow their rules)
-- ❌ Unauthorized scanning
-- ❌ Production systems without approval
-- ❌ Any illegal activity
-
-Unauthorized access to computer systems is illegal in most jurisdictions. Users are solely responsible for ensuring compliance with applicable laws and regulations.
+- [ ] Web UI dashboard
+- [ ] JSON output format
+- [ ] Integration with Metasploit
+- [ ] Docker containerization
+- [ ] API endpoint scanning
+- [ ] Report templates (PDF, HTML)
+- [ ] Continuous monitoring mode
+- [ ] Vulnerability database integration
 
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-### Development Setup
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-```bash
-git clone https://github.com/yourusername/aiscan.git
-cd aiscan
-
-# Test your changes
-./aiscan localhost --quick
-
-# Check for shellcheck issues
-shellcheck aiscan
-```
-
-### Adding New Tools
-
-To add a new scanning tool:
-
-1. Add tool check in `check_dependencies()`
-2. Add scan function call in main execution
-3. Parse results and add to `ALL_RESULTS`
-4. Update prompt to include new data type
-5. Update README with tool info
-
-## 📝 Changelog
-
-### v1.0.0 (2025-01-13)
-- Initial release
-- 9 integrated security tools
-- AI-powered analysis with Ollama
-- Interactive skip feature
-- Auto-save reports
-- Three scan modes (quick/standard/full)
-
-## 📄 License
+## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## ⚠️ Disclaimer
 
-- [Ollama](https://ollama.ai) - Local LLM inference
-- [Nmap](https://nmap.org) - Network scanning
-- [Nikto](https://cirt.net/Nikto2) - Web vulnerability scanner
-- [WhatWeb](https://github.com/urbanadventurer/WhatWeb) - Web fingerprinting
-- All other open-source security tools integrated
-
-## 📞 Support
-
-- 🐛 [Report Issues](https://github.com/yourusername/aiscan/issues)
-- 💡 [Feature Requests](https://github.com/yourusername/aiscan/issues)
-- 📖 [Documentation](https://github.com/yourusername/aiscan/wiki)
+This tool is provided for educational and authorized testing purposes only. The authors and contributors are not responsible for any misuse or damage caused by this tool. Always ensure you have explicit permission before scanning any systems that you do not own.
 
 ## 🌟 Star History
 
-If you find AIScan useful, please consider giving it a star! ⭐
+If you find this tool useful, please consider giving it a star! ⭐
+
+## 📞 Contact
+
+- Issues: [GitHub Issues](https://github.com/yourusername/aiscan/issues)
+- Discussions: [GitHub Discussions](https://github.com/yourusername/aiscan/discussions)
 
 ---
 
 **Made with ❤️ for the security community**
 
-*Remember: With great power comes great responsibility. Happy (ethical) hacking!* 🔒
+**Remember: With great power comes great responsibility. Hack ethically! 🛡️**
