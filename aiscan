@@ -43,14 +43,12 @@ check_dependencies() {
     local missing_tools=()
     local optional_tools=()
 
-    # Check if AI-less mode - skip ollama check
-    if [ "$AILESS_MODE" = false ]; then
-        if ! command -v ollama &> /dev/null; then
-            missing_tools+=("ollama")
-        fi
-    fi
     
     # Required tools
+    if ! command -v ollama &> /dev/null; then
+        missing_tools+=("ollama")
+    fi
+    
     if ! command -v nmap &> /dev/null; then
         missing_tools+=("nmap")
     fi
@@ -103,10 +101,7 @@ check_dependencies() {
         done
         echo ""
         echo -e "${YELLOW}Installation commands:${NC}"
-        if [[ " ${missing_tools[@]} " =~ " ollama " ]]; then
-            echo "  Ollama:  curl -fsSL https://ollama.com/install.sh | sh"
-            echo "  ${CYAN}(Or use --no-ai flag to skip AI analysis)${NC}"
-        fi
+        echo "  Ollama:  curl -fsSL https://ollama.com/install.sh | sh"
         echo "  Nmap:    sudo apt install nmap"
         echo "  Curl:    sudo apt install curl"
         exit 1
@@ -143,10 +138,6 @@ usage() {
     echo "  -q, --quick         Quick scan (skip intensive scans)"
     echo "  -f, --full          Full AGGRESSIVE scan (all tools, max depth)"
     echo "  -u, --url URL       Specific URL to test (for injection tests)"
-    echo "  --no-ai             AI-less mode (skip AI analysis, only show scan results)"
-    echo "  --external-ai FILE  Use external AI analysis from file (e.g., from ChatGPT/Claude)"
-    echo "  --external-ai -     Read external AI analysis from stdin (paste and Ctrl+D)"
-    echo "  --ai-only FILE      Skip scanning, only analyze existing results from file"
     echo "  -h, --help          Show this help"
     echo ""
     echo -e "${YELLOW}Configuration:${NC}"
@@ -154,12 +145,9 @@ usage() {
     echo "  Example: echo 'MODEL=\"llama3.1\"' > ~/.aiscan.conf"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
-    echo "  $0 example.com                                  # Full scan with Ollama AI"
-    echo "  $0 example.com --full                           # Aggressive scan"
-    echo "  $0 example.com --no-ai                          # Scan without AI"
-    echo "  $0 example.com --external-ai analysis.txt       # Use external AI analysis"
-    echo "  $0 example.com --ai-only previous_scan.txt      # Only AI analysis, no scanning"
-    echo "  echo 'analysis' | $0 example.com --external-ai - # Pipe AI analysis"
+    echo "  $0 example.com"
+    echo "  $0 example.com --full"
+    echo "  $0 example.com -u 'http://example.com/page.php?id=1'"
     echo ""
     exit 1
 }
@@ -169,10 +157,6 @@ TARGET=""
 QUICK_SCAN=false
 FULL_SCAN=false
 SPECIFIC_URL=""
-AILESS_MODE=false
-EXTERNAL_AI_FILE=""
-AI_ONLY_MODE=false
-AI_ONLY_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -190,19 +174,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -u|--url)
             SPECIFIC_URL="$2"
-            shift 2
-            ;;
-        --no-ai|--noai|--ailess)
-            AILESS_MODE=true
-            shift
-            ;;
-        --external-ai)
-            EXTERNAL_AI_FILE="$2"
-            shift 2
-            ;;
-        --ai-only)
-            AI_ONLY_MODE=true
-            AI_ONLY_FILE="$2"
             shift 2
             ;;
         -h|--help)
@@ -224,218 +195,142 @@ done
 # Main execution
 show_banner
 
+# Handle batch mode with target list
+if [ -n "$TARGET_LIST_FILE" ]; then
+    if [ ! -f "$TARGET_LIST_FILE" ]; then
+        echo -e "${RED}Error: Target list file not found: $TARGET_LIST_FILE${NC}"
+        exit 1
+    fi
+    
+    # Enable log saving for batch mode
+    SAVE_LOGS=true
+    mkdir -p "$OUTPUT_DIR"
+    
+    # Read targets from file
+    TARGETS=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # Trim whitespace
+        line=$(echo "$line" | xargs)
+        TARGETS+=("$line")
+    done < "$TARGET_LIST_FILE"
+    
+    if [ ${#TARGETS[@]} -eq 0 ]; then
+        echo -e "${RED}Error: No valid targets found in $TARGET_LIST_FILE${NC}"
+        exit 1
+    fi
+    
+    echo -e "${BOLD}${CYAN}📋 BATCH SCAN MODE${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${GREEN}✓ Loaded ${#TARGETS[@]} targets from: $TARGET_LIST_FILE${NC}"
+    echo -e "${GREEN}✓ Logs will be saved to: $OUTPUT_DIR${NC}"
+    echo ""
+    echo -e "${YELLOW}Targets to scan:${NC}"
+    for target in "${TARGETS[@]}"; do
+        echo "  • $target"
+    done
+    echo ""
+    echo -e "${YELLOW}Press Enter to start batch scan, or Ctrl+C to cancel...${NC}"
+    read
+    
+    BATCH_START_TIME=$(date +%s)
+    SUCCESSFUL_SCANS=0
+    FAILED_SCANS=0
+    
+    for i in "${!TARGETS[@]}"; do
+        TARGET="${TARGETS[$i]}"
+        TARGET_NUM=$((i + 1))
+        
+        echo ""
+        echo -e "${BOLD}${MAGENTA}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${BOLD}${MAGENTA}║  SCANNING TARGET ${TARGET_NUM}/${#TARGETS[@]}: ${TARGET}${NC}"
+        echo -e "${BOLD}${MAGENTA}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        
+        # Create target-specific log file
+        TARGET_SAFE=$(echo "$TARGET" | tr '/:' '_')
+        TARGET_LOG_FILE="$OUTPUT_DIR/${TARGET_SAFE}_$(date +%Y%m%d_%H%M%S).log"
+        
+        # Execute scan for this target (redirect to function)
+        if scan_single_target "$TARGET" "$TARGET_LOG_FILE"; then
+            SUCCESSFUL_SCANS=$((SUCCESSFUL_SCANS + 1))
+            echo -e "${GREEN}✓ Target $TARGET_NUM/$#{TARGETS[@]} completed: $TARGET${NC}"
+        else
+            FAILED_SCANS=$((FAILED_SCANS + 1))
+            echo -e "${RED}✗ Target $TARGET_NUM/${#TARGETS[@]} failed: $TARGET${NC}"
+        fi
+        
+        # Don't wait after last target
+        if [ $TARGET_NUM -lt ${#TARGETS[@]} ]; then
+            echo ""
+            echo -e "${CYAN}⏳ Waiting 5 seconds before next target...${NC}"
+            sleep 5
+        fi
+    done
+    
+    BATCH_END_TIME=$(date +%s)
+    BATCH_TOTAL_TIME=$((BATCH_END_TIME - BATCH_START_TIME))
+    BATCH_MINUTES=$((BATCH_TOTAL_TIME / 60))
+    BATCH_SECONDS=$((BATCH_TOTAL_TIME % 60))
+    
+    echo ""
+    echo -e "${BOLD}${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${GREEN}║           BATCH SCAN COMPLETED                             ║${NC}"
+    echo -e "${BOLD}${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BOLD}📊 BATCH SCAN SUMMARY${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ Successful scans: ${SUCCESSFUL_SCANS}/${#TARGETS[@]}${NC}"
+    [ $FAILED_SCANS -gt 0 ] && echo -e "${RED}✗ Failed scans: ${FAILED_SCANS}/${#TARGETS[@]}${NC}"
+    echo -e "${CYAN}⏱️  Total batch time: ${BATCH_MINUTES}m ${BATCH_SECONDS}s${NC}"
+    echo -e "${CYAN}📁 All logs saved to: ${OUTPUT_DIR}${NC}"
+    echo ""
+    
+    # List all generated files
+    echo -e "${BOLD}Generated files:${NC}"
+    ls -lh "$OUTPUT_DIR"/*.log 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
+    echo ""
+    
+    exit 0
+fi
+
 if [[ -z "$TARGET" ]]; then
     echo -e "${RED}Error: No target specified${NC}"
     echo ""
     usage
 fi
 
-# Handle AI-only mode
-if [ "$AI_ONLY_MODE" = true ]; then
-    if [ -z "$AI_ONLY_FILE" ] || [ ! -f "$AI_ONLY_FILE" ]; then
-        echo -e "${RED}Error: AI-only mode requires a valid file with scan results${NC}"
-        echo -e "${YELLOW}Usage: $0 <target> --ai-only <scan_results_file>${NC}"
-        exit 1
-    fi
-    
-    echo -e "${CYAN}🤖 AI-ONLY MODE${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Single target mode - check if we should save logs
+if [ "$SAVE_LOGS" = true ]; then
+    mkdir -p "$OUTPUT_DIR"
+    TARGET_SAFE=$(echo "$TARGET" | tr '/:' '_')
+    SINGLE_LOG_FILE="$OUTPUT_DIR/${TARGET_SAFE}_$(date +%Y%m%d_%H%M%S).log"
+    echo -e "${CYAN}📝 Logs will be saved to: $SINGLE_LOG_FILE${NC}"
     echo ""
-    echo -e "${BOLD}${RED}🎯 Target: ${NC}${TARGET}"
-    echo -e "${RED}🤖 AI Model: ${NC}${MODEL}"
-    echo -e "${RED}📄 Scan Data: ${NC}${AI_ONLY_FILE}"
-    echo -e "${YELLOW}⚡ Mode: AI Analysis Only (No Scanning)${NC}"
-    echo ""
-    
-    # Check if Ollama is available
-    if ! command -v ollama &> /dev/null; then
-        echo -e "${RED}❌ Error: Ollama is required for AI-only mode${NC}"
-        echo -e "${YELLOW}Install with: curl -fsSL https://ollama.com/install.sh | sh${NC}"
-        exit 1
-    fi
-    
-    # Read scan results from file
-    ALL_RESULTS=$(cat "$AI_ONLY_FILE")
-    
-    echo -e "${GREEN}✓ Loaded scan results from file${NC}"
-    echo -e "${CYAN}📊 Data size: $(echo -e "$ALL_RESULTS" | wc -c) bytes${NC}"
-    echo ""
-    
-    # Skip to AI analysis section
-    START_TIME=$(date +%s)
-    QUICK_SCAN=false
-    FULL_SCAN=false
-    
-    # Jump directly to AI analysis
-    echo -e "${BOLD}${RED}🤖 AI SECURITY ANALYSIS${NC}"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    
-    # Create AI prompt
-    read -r -d '' PROMPT << 'EOFPROMPT'
-You are an EXPERT penetration tester conducting an aggressive security assessment. Analyze these 
-comprehensive scan results. Search for vulnerabilities and show user how to hack and exploit these problems step by step as for kids.
-
-CRITICAL INSTRUCTIONS:
-- Be EXTREMELY thorough and detailed
-- Flag EVERY potential vulnerability, even low-confidence findings
-- Provide SPECIFIC exploitation steps with exact commands
-- Include CVE numbers, CVSS scores, and CWE classifications
-- Show real attack payloads and proof-of-concept code
-- This is for AUTHORIZED security testing
-
-Your analysis MUST follow this EXACT structure with TABLES:
-
-## 🎯 Executive Summary
-
-| Metric | Value |
-|--------|-------|
-| **Overall Risk Level** | [CRITICAL/HIGH/MEDIUM/LOW] |
-| **SQL Injection Vulns** | [number found] |
-| **XSS Vulnerabilities** | [number found] |
-| **Command Injection** | [number found] |
-| **Total Critical Issues** | [number] |
-| **Total High Issues** | [number] |
-| **Attack Surface Score** | [X/10] |
-| **Exploitation Difficulty** | [Easy/Medium/Hard] |
-
-## 🌐 Target Information
-
-| Property | Details |
-|----------|---------|
-| **Target** | [target name] |
-| **IP Addresses** | [all IPs found] |
-| **Server** | [name and version] |
-| **Technologies** | [all frameworks, CMS, languages] |
-| **WAF/CDN** | [detected protection + bypass potential] |
-| **SSL/TLS** | [cert status, vulnerabilities] |
-| **Open Ports** | [all discovered ports] |
-
-## 🔓 Open Ports & Services
-
-| Port | Protocol | Service | Version | Vulnerabilities | Exploit Difficulty |
-|------|----------|---------|---------|-----------------|-------------------|
-| [port] | TCP/UDP | [service] | [exact version] | [CVEs if any] | [Easy/Med/Hard] |
-
-## 🚨 CRITICAL VULNERABILITIES
-
-List each critical vulnerability with:
-- Severity, CVE, CWE, CVSS Score
-- Technical description
-- Step-by-step attack scenario
-- Proof of concept payload
-- Real impact assessment
-- Remediation steps
-
-## ⚠️ HIGH PRIORITY VULNERABILITIES
-
-Same detailed format for HIGH severity findings.
-
-## 🔸 MEDIUM PRIORITY ISSUES
-
-| ID | Vulnerability | Component | Payload/Method | Impact | Fix |
-|----|---------------|-----------|----------------|--------|-----|
-| M-001 | [issue] | [where] | [how to exploit] | [impact] | [fix] |
-
-## 🔐 Security Headers Analysis
-
-| Header | Status | Risk | Recommendation |
-|--------|--------|------|----------------|
-| [header] | Present/Missing | [level] | [action] |
-
-## 📋 REMEDIATION ROADMAP
-
-### Immediate Actions (24 hours)
-1. [Action with exact steps]
-
-### Short-term (1 week)
-1. [Action with exact steps]
-
-### Long-term (1 month)
-1. [Action with exact steps]
-
----
-SCAN DATA TO ANALYZE:
-EOFPROMPT
-
-    FULL_PROMPT="${PROMPT}
-
-TARGET: $TARGET
-SCAN MODE: AI-Only Analysis
-
-$ALL_RESULTS
-"
-    
-    echo -e "${CYAN}🧠 Sending scan results to AI model: ${MODEL}${NC}"
-    echo -e "${YELLOW}⏳ AI Analysis in progress... This may take 1-3 minutes${NC}"
-    echo ""
-    
-    # Call Ollama
-    AI_RESPONSE=$(ollama run "$MODEL" "$FULL_PROMPT" 2>&1)
-    AI_EXIT_CODE=$?
-    
-    if [ $AI_EXIT_CODE -ne 0 ]; then
-        echo -e "${RED}❌ AI Analysis Failed!${NC}"
-        echo -e "${YELLOW}Error details:${NC}"
-        echo "$AI_RESPONSE" | head -20
-        exit 1
-    fi
-    
-    # Display results
-    END_TIME=$(date +%s)
-    TOTAL_TIME=$((END_TIME - START_TIME))
-    MINUTES=$((TOTAL_TIME / 60))
-    SECONDS=$((TOTAL_TIME % 60))
-    
-    echo -e "${GREEN}✓ AI Analysis Complete!${NC}"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "$AI_RESPONSE"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    
-    # Save report
-    REPORT_FILE="$HOME/aiscan_aionly_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
-    {
-        echo "════════════════════════════════════════════════════════════"
-        echo "               AIScan Security Assessment Report            "
-        echo "                       (AI-Only Mode)                        "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "Target:       $TARGET"
-        echo "Date:         $(date)"
-        echo "AI Model:     $MODEL"
-        echo "Analysis Time: ${MINUTES}m ${SECONDS}s"
-        echo "Source File:  $AI_ONLY_FILE"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                      AI ANALYSIS REPORT                     "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "$AI_RESPONSE"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                         END OF REPORT                       "
-        echo "════════════════════════════════════════════════════════════"
-    } > "$REPORT_FILE"
-    
-    echo -e "${GREEN}✅ AI analysis report saved to: ${REPORT_FILE}${NC}"
-    echo -e "${GREEN}Scan completed successfully! (AI-only mode)${NC}"
-    echo ""
-    exit 0
 fi
+
+# Function to scan a single target
+scan_single_target() {
+    local TARGET="$1"
+    local LOG_FILE="${2:-}"
+    
+    # If log file specified, redirect all output
+    if [ -n "$LOG_FILE" ]; then
+        exec 1> >(tee -a "$LOG_FILE")
+        exec 2>&1
+        echo "════════════════════════════════════════════════════════════"
+        echo "AIScan Log - Target: $TARGET"
+        echo "Date: $(date)"
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+    fi
 
 check_dependencies
 
 echo -e "${BOLD}${RED}🎯 Target: ${NC}${TARGET}"
-if [ "$AILESS_MODE" = true ]; then
-    echo -e "${RED}🤖 AI Analysis: ${NC}${YELLOW}DISABLED (AI-less mode)${NC}"
-else
-    echo -e "${RED}🤖 AI Model: ${NC}${MODEL}"
-fi
+echo -e "${RED}🤖 AI Model: ${NC}${MODEL}"
 echo -e "${RED}⚡ Scan Mode: ${NC}$([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "FULL AGGRESSIVE" || echo "Standard Aggressive"))"
 echo -e "${RED}📁 Temp Directory: ${NC}${TEMP_DIR}"
 echo ""
@@ -516,20 +411,20 @@ fi
 # 1. Aggressive Nmap Scan
 NMAP_OUT="$TEMP_DIR/nmap.txt"
 if [ "$QUICK_SCAN" = true ]; then
-    run_scan "Running Nmap (Quick Aggressive Scan)..." \
-             "nmap -T4 -F --script vuln '$TARGET'" \
+    run_scan "Running Nmap (Quick Scan - Top 100 Ports)..." \
+             "timeout 180 nmap -T4 --top-ports 100 '$TARGET'" \
              "$NMAP_OUT"
 elif [ "$FULL_SCAN" = true ]; then
-    run_scan "Running Nmap (FULL AGGRESSIVE - All Ports + Scripts)..." \
-             "nmap -T4 -p- -sV -sC --script='vuln,exploit,auth,brute' '$TARGET'" \
+    run_scan "Running Nmap (Full Scan - Top 1000 Ports + Scripts)..." \
+             "timeout 600 nmap -T4 --top-ports 1000 -sV -sC --script vuln --script-timeout=90s '$TARGET'" \
              "$NMAP_OUT"
 else
-    run_scan "Running Nmap (Aggressive Service Detection)..." \
-             "nmap -T4 -sV -sC --script vuln -A '$TARGET'" \
+    run_scan "Running Nmap (Standard - Top 200 Ports + Vuln Scripts)..." \
+             "timeout 300 nmap -T4 --top-ports 200 -sV --script vuln --script-timeout=60s '$TARGET'" \
              "$NMAP_OUT"
 fi
-if [ $? -eq 0 ]; then
-    ALL_RESULTS+="=== NMAP AGGRESSIVE SCAN ===\n"
+if [ -s "$NMAP_OUT" ]; then
+    ALL_RESULTS+="=== NMAP SCAN ===\n"
     ALL_RESULTS+="$(cat $NMAP_OUT)\n\n"
 fi
 echo ""
@@ -818,130 +713,6 @@ fi
 
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-
-# AI Analysis or Skip
-if [ "$AILESS_MODE" = true ]; then
-    echo -e "${BOLD}${YELLOW}🚫 AI Analysis Skipped (AI-less mode)${NC}"
-    echo ""
-    echo -e "${CYAN}📋 Raw scan results have been collected and displayed above.${NC}"
-    echo -e "${CYAN}💡 To enable AI analysis, run without --no-ai flag${NC}"
-    echo ""
-    
-    # Save report without AI analysis
-    REPORT_FILE="$HOME/aiscan_report_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
-    {
-        echo "════════════════════════════════════════════════════════════"
-        echo "               AIScan Security Assessment Report            "
-        echo "                         (AI-less Mode)                      "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "Target:     $TARGET"
-        echo "Date:       $(date)"
-        echo "AI Analysis: DISABLED"
-        echo "Scan Time:  ${MINUTES}m ${SECONDS}s"
-        echo "Scan Mode:  $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard Aggressive"))"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                        SCAN RESULTS                         "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo -e "$ALL_RESULTS"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                         END OF REPORT                       "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "NOTE: This report was generated in AI-less mode."
-        echo "For detailed AI-powered vulnerability analysis and exploitation"
-        echo "guidance, run the scan again without the --no-ai flag."
-    } > "$REPORT_FILE"
-    
-    echo -e "${GREEN}✅ Full report saved to: ${REPORT_FILE}${NC}"
-    echo -e "${CYAN}📁 Temp scan files: $TEMP_DIR (will be cleaned up on exit)${NC}"
-    echo ""
-    echo -e "${GREEN}Scan completed successfully! (AI-less mode)${NC}"
-    echo ""
-    exit 0
-fi
-
-# Handle External AI mode
-if [ -n "$EXTERNAL_AI_FILE" ]; then
-    echo -e "${BOLD}${MAGENTA}🌐 EXTERNAL AI MODE${NC}"
-    echo ""
-    
-    EXTERNAL_AI_RESPONSE=""
-    
-    if [ "$EXTERNAL_AI_FILE" = "-" ]; then
-        echo -e "${CYAN}📝 Paste your AI analysis below (press Ctrl+D when done):${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        EXTERNAL_AI_RESPONSE=$(cat)
-        echo ""
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    else
-        if [ ! -f "$EXTERNAL_AI_FILE" ]; then
-            echo -e "${RED}❌ Error: File not found: $EXTERNAL_AI_FILE${NC}"
-            exit 1
-        fi
-        EXTERNAL_AI_RESPONSE=$(cat "$EXTERNAL_AI_FILE")
-        echo -e "${GREEN}✓ Loaded external AI analysis from: $EXTERNAL_AI_FILE${NC}"
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✓ External AI Analysis Loaded!${NC}"
-    echo -e "${CYAN}📊 Analysis size: $(echo -e "$EXTERNAL_AI_RESPONSE" | wc -c) bytes${NC}"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "$EXTERNAL_AI_RESPONSE"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    
-    # Save full report with external AI
-    REPORT_FILE="$HOME/aiscan_report_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
-    {
-        echo "════════════════════════════════════════════════════════════"
-        echo "               AIScan Security Assessment Report            "
-        echo "                    (External AI Analysis)                   "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "Target:     $TARGET"
-        echo "Date:       $(date)"
-        echo "AI Source:  External (ChatGPT/Claude/Gemini/etc.)"
-        echo "Scan Time:  ${MINUTES}m ${SECONDS}s"
-        echo "Scan Mode:  $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard Aggressive"))"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                        SCAN RESULTS                         "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo -e "$ALL_RESULTS"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                 EXTERNAL AI ANALYSIS REPORT                 "
-        echo "════════════════════════════════════════════════════════════"
-        echo ""
-        echo "$EXTERNAL_AI_RESPONSE"
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "                         END OF REPORT                       "
-        echo "════════════════════════════════════════════════════════════"
-    } > "$REPORT_FILE"
-    
-    echo -e "${GREEN}✅ Full report saved to: ${REPORT_FILE}${NC}"
-    echo -e "${CYAN}📁 Temp scan files: $TEMP_DIR (will be cleaned up on exit)${NC}"
-    echo ""
-    echo -e "${BOLD}${RED}⚠️  IMPORTANT REMINDERS:${NC}"
-    echo -e "${YELLOW}   • Only use this tool on systems you have authorization to test${NC}"
-    echo -e "${YELLOW}   • Unauthorized security testing is illegal${NC}"
-    echo -e "${YELLOW}   • Keep this report secure - it contains sensitive information${NC}"
-    echo ""
-    echo -e "${GREEN}Scan completed successfully! (External AI mode)${NC}"
-    echo ""
-    exit 0
-fi
-
-# Continue with AI analysis if not in AI-less mode
 echo -e "${BOLD}${RED}🤖 AI SECURITY DECONSTRUCTION ANALYSIS${NC}"
 echo ""
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -956,8 +727,7 @@ fi
 
 # Create comprehensive AI prompt for aggressive analysis
 read -r -d '' PROMPT << 'EOFPROMPT'
-You are an EXPERT penetration tester conducting an aggressive security assessment. Analyze these 
-comprehensive scan results. Search for vulnerabilities and show user how to hack and exploit these problems step by step as for kids.
+You are an EXPERT penetration tester conducting an aggressive security assessment. Analyze these comprehensive scan results.
 
 CRITICAL INSTRUCTIONS:
 - Be EXTREMELY thorough and detailed
@@ -1039,6 +809,7 @@ Same detailed format for HIGH severity findings.
 
 ---
 SCAN DATA TO ANALYZE:
+
 EOFPROMPT
 
 # Append scan results to prompt
@@ -1074,7 +845,6 @@ if [ $AI_EXIT_CODE -ne 0 ]; then
     echo "2. Pull the model if needed: ollama pull $MODEL"
     echo "3. Try a different model with: $0 $TARGET -m llama3.2"
     echo "4. Check ollama service: systemctl status ollama (if using systemd)"
-    echo "5. Or run in AI-less mode: $0 $TARGET --no-ai"
     echo ""
     echo -e "${CYAN}💡 Your scan results are saved in: $TEMP_DIR/${NC}"
     echo -e "${CYAN}💡 AI prompt saved to: $TEMP_DIR/ai_prompt.txt${NC}"
@@ -1131,3 +901,17 @@ echo -e "${YELLOW}   • Keep this report secure - it contains sensitive informa
 echo ""
 echo -e "${GREEN}Scan completed successfully!${NC}"
 echo ""
+
+    # Return success
+    return 0
+}
+
+# Call the scan function for single target mode
+if [ -n "$SINGLE_LOG_FILE" ]; then
+    scan_single_target "$TARGET" "$SINGLE_LOG_FILE"
+    echo ""
+    echo -e "${GREEN}✅ Complete log saved to: $SINGLE_LOG_FILE${NC}"
+    echo ""
+else
+    scan_single_target "$TARGET"
+fi
