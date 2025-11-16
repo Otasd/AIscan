@@ -13,7 +13,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Configuration
-LOCAL_AI_MODEL="llama3.2:latest"
+LOCAL_AI_MODEL="huihui_ai/qwen3-abliterated:8b"
 NVD_API_KEY="3D60BBF1-DAC2-F011-8364-129478FCB64D"
 TEMP_DIR="/tmp/aiscan_$$"
 mkdir -p "$TEMP_DIR"
@@ -160,334 +160,7 @@ if [[ -n "$TARGET_LIST" ]]; then
                      -m "$LOCAL_AI_MODEL"
         
         echo ""
-        echo -e "${GREEN}✓ External AI analysis loaded successfully${NC}"
-    echo ""
-    
-    # Display with critical vulnerability highlighting
-    if echo "$AI_RESPONSE" | grep -qi "critical"; then
-        echo ""
-        echo -e "${BOLD}${RED}"
-        echo "═══════════════════════════════════════════════════════════════════"
-        echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
-        echo "═══════════════════════════════════════════════════════════════════"
-        echo -e "${NC}"
-        echo ""
-    fi
-    
-    echo "$AI_RESPONSE"
-    echo ""
-    
-    ALL_RESULTS+="\n=== EXTERNAL AI SECURITY ANALYSIS ===\n$AI_RESPONSE\n\n"
-    
-    NO_AI=true  # Skip local AI since we imported external
-fi
-
-# ============================================================================
-# LOCAL AI ANALYSIS PHASE
-# ============================================================================
-
-if [ "$NO_AI" = false ]; then
-    echo -e "${BOLD}${RED}🤖 PHASE 4: LOCAL AI SECURITY ANALYSIS${NC}"
-    echo ""
-    
-    # Check if model is available
-    echo -e "${CYAN}🧠 Checking local AI model: ${LOCAL_AI_MODEL}${NC}"
-    if ! ollama list | grep -q "$LOCAL_AI_MODEL"; then
-        echo -e "${YELLOW}⚠️  Model not found locally. Pulling ${LOCAL_AI_MODEL}...${NC}"
-        ollama pull "$LOCAL_AI_MODEL"
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}❌ Failed to pull model${NC}"
-            echo -e "${YELLOW}Available models: $(ollama list | tail -n +2 | awk '{print $1}')${NC}"
-            echo -e "${CYAN}💡 Run with --no-ai to skip AI analysis${NC}"
-            NO_AI=true
-        fi
-    fi
-    
-    if [ "$NO_AI" = false ]; then
-        echo -e "${GREEN}✓ Model ready${NC}"
-        echo ""
-        
-        # Create expert security prompt
-        read -r -d '' AI_PROMPT << 'EOFPROMPT'
-You are an expert penetration tester analyzing scan results for a defense sector client. Provide a DETAILED security assessment.
-
-## 🎯 EXECUTIVE SUMMARY
-- Overall risk level (CRITICAL/HIGH/MEDIUM/LOW)
-- Total vulnerabilities found
-- Most urgent issues
-- Attack surface assessment
-
-## 🚨 CRITICAL FINDINGS (CVSS ≥9.0)
-For each CRITICAL vulnerability:
-- CVE ID and CVSS score
-- Technical explanation (detailed)
-- Real-world exploitation steps
-- Proof-of-concept commands/payloads
-- Business impact
-- Immediate remediation (exact steps)
-
-## ⚠️ HIGH PRIORITY (CVSS 7.0-8.9)
-For each HIGH severity issue:
-- Vulnerability details
-- Exploitation difficulty
-- Attack vectors
-- Recommended fixes with commands
-
-## 🔸 MEDIUM PRIORITY (CVSS 4.0-6.9)
-- Issue descriptions
-- Impact assessment
-- Remediation steps
-
-## 🔐 SECURITY CONFIGURATION
-- Missing security headers (list each)
-- SSL/TLS issues
-- Service misconfigurations
-- Best practice violations
-
-## 🛠️ REMEDIATION ROADMAP
-
-### IMMEDIATE (24 hours):
-1. [Specific action with exact commands]
-2. [Next action with exact commands]
-
-### SHORT-TERM (1 week):
-1. [Specific action]
-2. [Next action]
-
-### LONG-TERM (1 month):
-1. [Strategic improvements]
-
-## 📊 TECHNICAL DETAILS
-- Detected services and versions
-- Version-specific vulnerabilities
-- Potential attack chains
-- Defense evasion techniques
-
-Be thorough, technical, and actionable. Include specific commands and payloads.
-
----
-SCAN RESULTS:
-EOFPROMPT
-
-        FULL_PROMPT="${AI_PROMPT}
-
-Target: ${TARGET}
-Scan Duration: ${MINUTES}m ${SECONDS}s
-Scan Type: $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard"))
-
-${ALL_RESULTS}
-"
-        
-        echo -e "$FULL_PROMPT" > "$TEMP_DIR/ai_prompt.txt"
-        
-        echo -e "${CYAN}🧠 Analyzing with local AI (this may take 2-5 minutes)...${NC}"
-        echo -e "${YELLOW}⏳ Processing ${#ALL_RESULTS} bytes of scan data${NC}"
-        echo ""
-        
-        # Call Ollama with timeout
-        AI_RESPONSE=$(timeout 600 ollama run "$LOCAL_AI_MODEL" "$FULL_PROMPT" 2>&1)
-        AI_EXIT_CODE=$?
-        
-        if [ $AI_EXIT_CODE -eq 0 ]; then
-            echo -e "${GREEN}✓ AI Analysis Complete!${NC}"
-            echo ""
-            
-            # Check for critical vulnerabilities and display prominent warning
-            if echo "$AI_RESPONSE" | grep -qi "critical"; then
-                echo ""
-                echo -e "${BOLD}${RED}"
-                echo "═══════════════════════════════════════════════════════════════════"
-                echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
-                echo "═══════════════════════════════════════════════════════════════════"
-                echo -e "${NC}"
-                echo ""
-            fi
-            
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo ""
-            echo "$AI_RESPONSE"
-            echo ""
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo ""
-            
-            ALL_RESULTS+="\n=== LOCAL AI SECURITY ANALYSIS ===\n$AI_RESPONSE\n\n"
-        else
-            echo -e "${RED}❌ AI Analysis Failed or Timeout${NC}"
-            echo -e "${YELLOW}💡 Export results for external AI: $0 $TARGET --export-for-ai${NC}"
-            echo ""
-        fi
-    fi
-fi
-
-# ============================================================================
-# REPORT GENERATION WITH CRITICAL VULNERABILITY HIGHLIGHTING
-# ============================================================================
-
-REPORT_FILE="$HOME/aiscan_private_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
-
-# Check if critical vulnerabilities were found
-CRITICAL_VULNS=$(echo -e "$ALL_RESULTS" | grep -i "critical" | wc -l)
-HIGH_VULNS=$(echo -e "$ALL_RESULTS" | grep -i "high" | wc -l)
-
-cat > "$REPORT_FILE" << EOFREPORT
-════════════════════════════════════════════════════════════
-         🔒 CONFIDENTIAL SECURITY ASSESSMENT REPORT 🔒
-                    AIScan Private Edition v2.1
-════════════════════════════════════════════════════════════
-
-⚠️  CONFIDENTIAL - FOR AUTHORIZED PERSONNEL ONLY ⚠️
-
-Target:          $TARGET
-Assessment Date: $(date)
-Scan Duration:   ${MINUTES}m ${SECONDS}s
-AI Model:        $([ "$NO_AI" = true ] && echo "None (AI-less mode)" || echo "$LOCAL_AI_MODEL (Local Processing)")
-Privacy Mode:    ENABLED (All data processed locally)
-CVE Database:    $([ "$SKIP_VULNINTEL" = true ] && echo "Disabled" || echo "NVD.gov")
-
-════════════════════════════════════════════════════════════
-                    VULNERABILITY SUMMARY
-════════════════════════════════════════════════════════════
-
-Potential CRITICAL findings: $CRITICAL_VULNS
-Potential HIGH findings:     $HIGH_VULNS
-
-$(if [ $CRITICAL_VULNS -gt 0 ]; then
-echo ""
-echo "═══════════════════════════════════════════════════════════════════"
-echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
-echo "═══════════════════════════════════════════════════════════════════"
-echo ""
-echo "IMMEDIATE ACTION REQUIRED - Review CRITICAL findings below"
-echo ""
-fi)
-
-════════════════════════════════════════════════════════════
-                    ASSESSMENT FINDINGS
-════════════════════════════════════════════════════════════
-
-$(echo -e "$ALL_RESULTS")
-
-════════════════════════════════════════════════════════════
-                   SECURITY RECOMMENDATIONS
-════════════════════════════════════════════════════════════
-
-This assessment was conducted using:
-- Port scanning and service enumeration (Nmap)
-- Web technology fingerprinting (WhatWeb)
-- Vulnerability database correlation (NVD)
-- Web vulnerability scanning (Nikto)
-- Template-based CVE scanning (Nuclei)
-- SQL injection testing (SQLMap)
-- SSL/TLS security analysis (TestSSL/OpenSSL)
-- WAF/CDN detection (Wafw00f)
-- DNS enumeration
-- HTTP security header analysis
-$([ "$NO_AI" = false ] && echo "- Local AI security analysis (Ollama)")
-
-IMPORTANT NOTES:
-✅ All client data remained on local infrastructure
-✅ No sensitive information transmitted to external AI services
-✅ CVE lookups performed against public NVD database only
-✅ Full scan logs available in: $TEMP_DIR/
-
-NEXT STEPS:
-1. Review all CRITICAL findings immediately (within 24 hours)
-2. Implement immediate remediation actions
-3. Schedule follow-up scan to verify fixes
-4. Document all changes in change management system
-5. Update security baseline documentation
-
-════════════════════════════════════════════════════════════
-                        END OF REPORT
-════════════════════════════════════════════════════════════
-
-Report ID: aiscan_$(date +%Y%m%d_%H%M%S)
-Classification: CONFIDENTIAL
-Distribution: Authorized Security Personnel Only
-
-This report contains sensitive security information about ${TARGET}.
-Unauthorized disclosure may result in exploitation of vulnerabilities.
-Handle according to your organization's data classification policy.
-
-EOFREPORT
-
-echo -e "${GREEN}✅ Confidential report saved to: ${REPORT_FILE}${NC}"
-echo ""
-
-# Display prominent warning if critical vulnerabilities found
-if [ $CRITICAL_VULNS -gt 0 ]; then
-    echo ""
-    echo -e "${BOLD}${RED}"
-    echo "═══════════════════════════════════════════════════════════════════"
-    echo "                  ⚠️  CRITICAL VULNERABILITIES  ⚠️"
-    echo "═══════════════════════════════════════════════════════════════════"
-    echo -e "${NC}"
-    echo -e "${YELLOW}$CRITICAL_VULNS potential CRITICAL vulnerabilities detected!${NC}"
-    echo -e "${YELLOW}$HIGH_VULNS potential HIGH severity issues detected!${NC}"
-    echo ""
-    echo -e "${RED}IMMEDIATE ACTION REQUIRED - Review report immediately${NC}"
-    echo ""
-fi
-
-echo -e "${BOLD}${CYAN}📊 SCAN SUMMARY${NC}"
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}Target:${NC}          $TARGET"
-echo -e "${CYAN}Duration:${NC}        ${MINUTES}m ${SECONDS}s"
-echo -e "${CYAN}Tools Used:${NC}      $(echo -e "$ALL_RESULTS" | grep -c "===" ) scan types"
-echo -e "${CYAN}Report:${NC}          $REPORT_FILE"
-echo -e "${CYAN}Privacy:${NC}         ${GREEN}✓ All data processed locally${NC}"
-echo -e "${CYAN}Critical:${NC}        ${RED}$CRITICAL_VULNS potential findings${NC}"
-echo -e "${CYAN}High:${NC}            ${YELLOW}$HIGH_VULNS potential findings${NC}"
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-
-# Secure the report
-chmod 600 "$REPORT_FILE"
-echo -e "${CYAN}🔒 Report permissions set to 600 (owner read/write only)${NC}"
-echo ""
-
-echo -e "${BOLD}${RED}⚠️  SECURITY REMINDERS:${NC}"
-echo -e "${YELLOW}   • This scan was authorized for: $TARGET${NC}"
-echo -e "${YELLOW}   • Report contains confidential client data${NC}"
-echo -e "${YELLOW}   • Store report securely and encrypt if transmitting${NC}"
-echo -e "${YELLOW}   • Follow responsible disclosure for any findings${NC}"
-echo -e "${YELLOW}   • Prioritize CRITICAL vulnerabilities for immediate action${NC}"
-echo ""
-
-# Show export options if AI was not used
-if [ "$NO_AI" = true ] && [ "$EXPORT_FOR_AI" = false ]; then
-    echo -e "${CYAN}💡 TIP: Export for external AI analysis:${NC}"
-    echo -e "   $0 $TARGET --export-for-ai"
-    echo ""
-fi
-
-echo -e "${GREEN}✓ Scan completed successfully! (Private Edition v2.1)${NC}"
-echo ""
-
-# Offer to encrypt report
-if [ $CRITICAL_VULNS -gt 0 ] || [ $HIGH_VULNS -gt 5 ]; then
-    echo -e "${YELLOW}⚠️  Report contains sensitive findings${NC}"
-    read -p "$(echo -e ${CYAN}Encrypt report with GPG? [y/N]: ${NC})" -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if command -v gpg &> /dev/null; then
-            gpg -c "$REPORT_FILE"
-            if [ $? -eq 0 ]; then
-                echo -e "${GREEN}✓ Report encrypted: ${REPORT_FILE}.gpg${NC}"
-                read -p "$(echo -e ${YELLOW}Delete unencrypted report? [y/N]: ${NC})" -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    shred -u "$REPORT_FILE"
-                    echo -e "${GREEN}✓ Unencrypted report securely deleted${NC}"
-                fi
-            fi
-        else
-            echo -e "${YELLOW}GPG not installed. Install with: sudo apt install gnupg${NC}"
-        fi
-    fi
-fi
-
-echo ""✓ Completed $target ($CURRENT_TARGET/$TOTAL_TARGETS)${NC}"
+        echo -e "${GREEN}✓ Completed $target ($CURRENT_TARGET/$TOTAL_TARGETS)${NC}"
         echo ""
         
         # Delay between targets to avoid rate limiting
@@ -502,6 +175,7 @@ echo ""✓ Completed $target ($CURRENT_TARGET/$TOTAL_TARGETS)${NC}"
     exit 0
 fi
 
+# Single target validation
 if [[ -z "$TARGET" ]]; then
     echo -e "${RED}Error: No target specified${NC}"
     usage
@@ -563,14 +237,13 @@ run_scan() {
 echo -e "${BOLD}${CYAN}🔍 PHASE 1: RECONNAISSANCE & ENUMERATION${NC}"
 echo ""
 
-# 1. Nmap - FIXED: Common ports only in full mode
+# 1. Nmap
 NMAP_OUT="$TEMP_DIR/nmap.txt"
 if [ "$QUICK_SCAN" = true ]; then
     run_scan "Nmap: Quick scan (top 100 ports)" \
              "nmap -T4 -F -sV --version-intensity 5 '$TARGET'" \
              "$NMAP_OUT"
 elif [ "$FULL_SCAN" = true ]; then
-    # FIXED: Use --top-ports for common ports instead of -p-
     run_scan "Nmap: Common ports scan (top 1000) + version detection" \
              "nmap -T4 --top-ports 1000 -sV --version-intensity 9 -sC --script='banner,version,vuln' '$TARGET'" \
              "$NMAP_OUT"
@@ -694,14 +367,13 @@ echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # ============================================================================
-# ENHANCED VULNERABILITY INTELLIGENCE PHASE - Parses ALL tools, not just Nmap
+# CVE INTELLIGENCE PHASE
 # ============================================================================
 
 if [ "$SKIP_VULNINTEL" = false ]; then
     echo -e "${BOLD}${CYAN}🛡️  PHASE 3: CVE INTELLIGENCE GATHERING${NC}"
     echo ""
     
-    # Enhanced inline VulnIntel script - parses ALL scan results
     cat > "$TEMP_DIR/vulnintel_enhanced.py" << 'EOFPYTHON'
 #!/usr/bin/env python3
 import re, requests, json, sys
@@ -710,11 +382,11 @@ from typing import List, Dict, Set
 NVD_API_KEY = "3D60BBF1-DAC2-F011-8364-129478FCB64D"
 
 def parse_all_services(scan_text: str) -> List[Dict]:
-    """Extract services from ALL scan results (Nmap, WhatWeb, Nikto, etc.)"""
+    """Extract services from ALL scan results"""
     services = []
-    seen_services = set()  # Avoid duplicates
+    seen_services = set()
     
-    # 1. Parse Nmap output
+    # Parse Nmap output
     nmap_pattern = r'(\d+)/(tcp|udp)\s+open\s+(\S+)\s*(.*?)(?:\n|$)'
     for match in re.finditer(nmap_pattern, scan_text, re.MULTILINE):
         port, proto, service, version_info = match.groups()
@@ -729,7 +401,7 @@ def parse_all_services(scan_text: str) -> List[Dict]:
                 })
                 seen_services.add(key)
     
-    # 2. Parse WhatWeb output
+    # Parse WhatWeb output
     whatweb_patterns = {
         r'Apache\[([^\]]+)\]': 'Apache',
         r'nginx\[([^\]]+)\]': 'nginx',
@@ -753,30 +425,6 @@ def parse_all_services(scan_text: str) -> List[Dict]:
                     'product': product, 'version': version, 'source': 'whatweb'
                 })
                 seen_services.add(key)
-    
-    # 3. Parse Nikto output for server versions
-    nikto_server = re.search(r'\+ Server:\s+([^\s]+)/([\d.]+)', scan_text)
-    if nikto_server:
-        product, version = nikto_server.groups()
-        key = f"{product}_{version}"
-        if key not in seen_services:
-            services.append({
-                'port': 'N/A', 'protocol': 'http', 'service': 'web',
-                'product': product, 'version': version, 'source': 'nikto'
-            })
-            seen_services.add(key)
-    
-    # 4. Parse SSL certificate for OpenSSL/TLS versions
-    ssl_match = re.search(r'(OpenSSL|TLS)\s+([\d.]+[a-z]*)', scan_text, re.IGNORECASE)
-    if ssl_match:
-        product, version = ssl_match.groups()
-        key = f"{product}_{version}"
-        if key not in seen_services:
-            services.append({
-                'port': '443', 'protocol': 'tcp', 'service': 'ssl',
-                'product': product, 'version': version, 'source': 'ssl'
-            })
-            seen_services.add(key)
     
     return services
 
@@ -868,9 +516,6 @@ for svc in services:
             
             print(f"   {severity_symbol} {v['cve_id']} - CVSS {v['cvss_score']} ({v['severity']})")
             print(f"      {v['description']}")
-            
-            if v['cvss_score'] >= 9.0:
-                print(f"      ⚡ EXPLOITATION: Likely available (check Exploit-DB)")
     else:
         print("   ✓ No known CVEs found in NVD")
     print()
@@ -883,14 +528,14 @@ EOFPYTHON
 
     chmod +x "$TEMP_DIR/vulnintel_enhanced.py"
     
-    echo -e "${CYAN}📡 Querying NVD database for CVEs (analyzing ALL scan results)...${NC}"
+    echo -e "${CYAN}📡 Querying NVD database for CVEs...${NC}"
     echo ""
     
     VULNINTEL_OUT="$TEMP_DIR/vulnintel_results.txt"
     echo -e "$ALL_RESULTS" | python3 "$TEMP_DIR/vulnintel_enhanced.py" 2>&1 | tee "$VULNINTEL_OUT"
     
     if [ -s "$VULNINTEL_OUT" ]; then
-        ALL_RESULTS+="\n=== CVE INTELLIGENCE (NVD Database - All Sources) ===\n$(cat $VULNINTEL_OUT)\n\n"
+        ALL_RESULTS+="\n=== CVE INTELLIGENCE (NVD Database) ===\n$(cat $VULNINTEL_OUT)\n\n"
     fi
     
     echo ""
@@ -981,4 +626,322 @@ if [ -n "$IMPORT_AI" ]; then
     
     AI_RESPONSE=$(cat "$IMPORT_AI")
     
-    echo -e "${GREEN}
+    echo -e "${GREEN}✓ External AI analysis loaded successfully${NC}"
+    echo ""
+    
+    # Display with critical vulnerability highlighting
+    if echo "$AI_RESPONSE" | grep -qi "critical"; then
+        echo ""
+        echo -e "${BOLD}${RED}"
+        echo "═══════════════════════════════════════════════════════════════════"
+        echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
+        echo "═══════════════════════════════════════════════════════════════════"
+        echo -e "${NC}"
+        echo ""
+    fi
+    
+    echo "$AI_RESPONSE"
+    echo ""
+    
+    ALL_RESULTS+="\n=== EXTERNAL AI SECURITY ANALYSIS ===\n$AI_RESPONSE\n\n"
+    
+    NO_AI=true  # Skip local AI since we imported external
+fi
+
+# ============================================================================
+# LOCAL AI ANALYSIS PHASE
+# ============================================================================
+
+if [ "$NO_AI" = false ]; then
+    echo -e "${BOLD}${RED}🤖 PHASE 4: LOCAL AI SECURITY ANALYSIS${NC}"
+    echo ""
+    
+    echo -e "${CYAN}🧠 Checking local AI model: ${LOCAL_AI_MODEL}${NC}"
+    if ! ollama list | grep -q "$LOCAL_AI_MODEL"; then
+        echo -e "${YELLOW}⚠️  Model not found locally. Pulling ${LOCAL_AI_MODEL}...${NC}"
+        ollama pull "$LOCAL_AI_MODEL"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ Failed to pull model${NC}"
+            echo -e "${YELLOW}Available models: $(ollama list | tail -n +2 | awk '{print $1}')${NC}"
+            echo -e "${CYAN}💡 Run with --no-ai to skip AI analysis${NC}"
+            NO_AI=true
+        fi
+    fi
+    
+    if [ "$NO_AI" = false ]; then
+        echo -e "${GREEN}✓ Model ready${NC}"
+        echo ""
+        
+        read -r -d '' AI_PROMPT << 'EOFPROMPT'
+You are an expert penetration tester analyzing scan results for a defense sector client. Provide a DETAILED security assessment.
+
+## 🎯 EXECUTIVE SUMMARY
+- Overall risk level (CRITICAL/HIGH/MEDIUM/LOW)
+- Total vulnerabilities found
+- Most urgent issues
+- Attack surface assessment
+
+## 🚨 CRITICAL FINDINGS (CVSS ≥9.0)
+For each CRITICAL vulnerability:
+- CVE ID and CVSS score
+- Technical explanation (detailed)
+- Real-world exploitation steps
+- Proof-of-concept commands/payloads
+- Business impact
+- Immediate remediation (exact steps)
+
+## ⚠️ HIGH PRIORITY (CVSS 7.0-8.9)
+For each HIGH severity issue:
+- Vulnerability details
+- Exploitation difficulty
+- Attack vectors
+- Recommended fixes with commands
+
+## 🔸 MEDIUM PRIORITY (CVSS 4.0-6.9)
+- Issue descriptions
+- Impact assessment
+- Remediation steps
+
+## 🔐 SECURITY CONFIGURATION
+- Missing security headers (list each)
+- SSL/TLS issues
+- Service misconfigurations
+- Best practice violations
+
+## 🛠️ REMEDIATION ROADMAP
+
+### IMMEDIATE (24 hours):
+1. [Specific action with exact commands]
+2. [Next action with exact commands]
+
+### SHORT-TERM (1 week):
+1. [Specific action]
+2. [Next action]
+
+### LONG-TERM (1 month):
+1. [Strategic improvements]
+
+## 📊 TECHNICAL DETAILS
+- Detected services and versions
+- Version-specific vulnerabilities
+- Potential attack chains
+- Defense evasion techniques
+
+Be thorough, technical, and actionable. Include specific commands and payloads.
+
+---
+SCAN RESULTS:
+EOFPROMPT
+
+        FULL_PROMPT="${AI_PROMPT}
+
+Target: ${TARGET}
+Scan Duration: ${MINUTES}m ${SECONDS}s
+Scan Type: $([ "$QUICK_SCAN" = true ] && echo "Quick" || ([ "$FULL_SCAN" = true ] && echo "Full Aggressive" || echo "Standard"))
+
+${ALL_RESULTS}
+"
+        
+        echo -e "$FULL_PROMPT" > "$TEMP_DIR/ai_prompt.txt"
+        
+        echo -e "${CYAN}🧠 Analyzing with local AI (this may take 2-5 minutes)...${NC}"
+        echo -e "${YELLOW}⏳ Processing ${#ALL_RESULTS} bytes of scan data${NC}"
+        echo ""
+        
+        AI_RESPONSE=$(timeout 600 ollama run "$LOCAL_AI_MODEL" "$FULL_PROMPT" 2>&1)
+        AI_EXIT_CODE=$?
+        
+        if [ $AI_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}✓ AI Analysis Complete!${NC}"
+            echo ""
+            
+            if echo "$AI_RESPONSE" | grep -qi "critical"; then
+                echo ""
+                echo -e "${BOLD}${RED}"
+                echo "═══════════════════════════════════════════════════════════════════"
+                echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
+                echo "═══════════════════════════════════════════════════════════════════"
+                echo -e "${NC}"
+                echo ""
+            fi
+            
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            echo "$AI_RESPONSE"
+            echo ""
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            
+            ALL_RESULTS+="\n=== LOCAL AI SECURITY ANALYSIS ===\n$AI_RESPONSE\n\n"
+        else
+            echo -e "${RED}❌ AI Analysis Failed or Timeout${NC}"
+            echo -e "${YELLOW}💡 Export results for external AI: $0 $TARGET --export-for-ai${NC}"
+            echo ""
+        fi
+    fi
+fi
+
+# ============================================================================
+# REPORT GENERATION
+# ============================================================================
+
+REPORT_FILE="$HOME/aiscan_private_${TARGET}_$(date +%Y%m%d_%H%M%S).txt"
+
+CRITICAL_VULNS=$(echo -e "$ALL_RESULTS" | grep -i "critical" | wc -l)
+HIGH_VULNS=$(echo -e "$ALL_RESULTS" | grep -i "high" | wc -l)
+
+cat > "$REPORT_FILE" << EOFREPORT
+════════════════════════════════════════════════════════════
+         🔒 CONFIDENTIAL SECURITY ASSESSMENT REPORT 🔒
+                    AIScan Private Edition v2.1
+════════════════════════════════════════════════════════════
+
+⚠️  CONFIDENTIAL - FOR AUTHORIZED PERSONNEL ONLY ⚠️
+
+Target:          $TARGET
+Assessment Date: $(date)
+Scan Duration:   ${MINUTES}m ${SECONDS}s
+AI Model:        $([ "$NO_AI" = true ] && echo "None (AI-less mode)" || echo "$LOCAL_AI_MODEL (Local Processing)")
+Privacy Mode:    ENABLED (All data processed locally)
+CVE Database:    $([ "$SKIP_VULNINTEL" = true ] && echo "Disabled" || echo "NVD.gov")
+
+════════════════════════════════════════════════════════════
+                    VULNERABILITY SUMMARY
+════════════════════════════════════════════════════════════
+
+Potential CRITICAL findings: $CRITICAL_VULNS
+Potential HIGH findings:     $HIGH_VULNS
+
+$(if [ $CRITICAL_VULNS -gt 0 ]; then
+echo ""
+echo "═══════════════════════════════════════════════════════════════════"
+echo "    ⚠️  ⚠️  ⚠️   CRITICAL VULNERABILITIES DETECTED   ⚠️  ⚠️  ⚠️"
+echo "═══════════════════════════════════════════════════════════════════"
+echo ""
+echo "IMMEDIATE ACTION REQUIRED - Review CRITICAL findings below"
+echo ""
+fi)
+
+════════════════════════════════════════════════════════════
+                    ASSESSMENT FINDINGS
+════════════════════════════════════════════════════════════
+
+$(echo -e "$ALL_RESULTS")
+
+════════════════════════════════════════════════════════════
+                   SECURITY RECOMMENDATIONS
+════════════════════════════════════════════════════════════
+
+This assessment was conducted using:
+- Port scanning and service enumeration (Nmap)
+- Web technology fingerprinting (WhatWeb)
+- Vulnerability database correlation (NVD)
+- Web vulnerability scanning (Nikto)
+- Template-based CVE scanning (Nuclei)
+- SQL injection testing (SQLMap)
+- SSL/TLS security analysis (TestSSL/OpenSSL)
+- WAF/CDN detection (Wafw00f)
+- DNS enumeration
+- HTTP security header analysis
+$([ "$NO_AI" = false ] && echo "- Local AI security analysis (Ollama)")
+
+IMPORTANT NOTES:
+✅ All client data remained on local infrastructure
+✅ No sensitive information transmitted to external AI services
+✅ CVE lookups performed against public NVD database only
+✅ Full scan logs available in: $TEMP_DIR/
+
+NEXT STEPS:
+1. Review all CRITICAL findings immediately (within 24 hours)
+2. Implement immediate remediation actions
+3. Schedule follow-up scan to verify fixes
+4. Document all changes in change management system
+5. Update security baseline documentation
+
+════════════════════════════════════════════════════════════
+                        END OF REPORT
+════════════════════════════════════════════════════════════
+
+Report ID: aiscan_$(date +%Y%m%d_%H%M%S)
+Classification: CONFIDENTIAL
+Distribution: Authorized Security Personnel Only
+
+This report contains sensitive security information about ${TARGET}.
+Unauthorized disclosure may result in exploitation of vulnerabilities.
+Handle according to your organization's data classification policy.
+
+EOFREPORT
+
+echo -e "${GREEN}✅ Confidential report saved to: ${REPORT_FILE}${NC}"
+echo ""
+
+if [ $CRITICAL_VULNS -gt 0 ]; then
+    echo ""
+    echo -e "${BOLD}${RED}"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo "                  ⚠️  CRITICAL VULNERABILITIES  ⚠️"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo -e "${NC}"
+    echo -e "${YELLOW}$CRITICAL_VULNS potential CRITICAL vulnerabilities detected!${NC}"
+    echo -e "${YELLOW}$HIGH_VULNS potential HIGH severity issues detected!${NC}"
+    echo ""
+    echo -e "${RED}IMMEDIATE ACTION REQUIRED - Review report immediately${NC}"
+    echo ""
+fi
+
+echo -e "${BOLD}${CYAN}📊 SCAN SUMMARY${NC}"
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}Target:${NC}          $TARGET"
+echo -e "${CYAN}Duration:${NC}        ${MINUTES}m ${SECONDS}s"
+echo -e "${CYAN}Tools Used:${NC}      $(echo -e "$ALL_RESULTS" | grep -c "===" ) scan types"
+echo -e "${CYAN}Report:${NC}          $REPORT_FILE"
+echo -e "${CYAN}Privacy:${NC}         ${GREEN}✓ All data processed locally${NC}"
+echo -e "${CYAN}Critical:${NC}        ${RED}$CRITICAL_VULNS potential findings${NC}"
+echo -e "${CYAN}High:${NC}            ${YELLOW}$HIGH_VULNS potential findings${NC}"
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+chmod 600 "$REPORT_FILE"
+echo -e "${CYAN}🔒 Report permissions set to 600 (owner read/write only)${NC}"
+echo ""
+
+echo -e "${BOLD}${RED}⚠️  SECURITY REMINDERS:${NC}"
+echo -e "${YELLOW}   • This scan was authorized for: $TARGET${NC}"
+echo -e "${YELLOW}   • Report contains confidential client data${NC}"
+echo -e "${YELLOW}   • Store report securely and encrypt if transmitting${NC}"
+echo -e "${YELLOW}   • Follow responsible disclosure for any findings${NC}"
+echo -e "${YELLOW}   • Prioritize CRITICAL vulnerabilities for immediate action${NC}"
+echo ""
+
+if [ "$NO_AI" = true ] && [ "$EXPORT_FOR_AI" = false ]; then
+    echo -e "${CYAN}💡 TIP: Export for external AI analysis:${NC}"
+    echo -e "   $0 $TARGET --export-for-ai"
+    echo ""
+fi
+
+echo -e "${GREEN}✓ Scan completed successfully! (Private Edition v2.1)${NC}"
+echo ""
+
+if [ $CRITICAL_VULNS -gt 0 ] || [ $HIGH_VULNS -gt 5 ]; then
+    echo -e "${YELLOW}⚠️  Report contains sensitive findings${NC}"
+    read -p "$(echo -e ${CYAN}Encrypt report with GPG? [y/N]: ${NC})" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if command -v gpg &> /dev/null; then
+            gpg -c "$REPORT_FILE"
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}✓ Report encrypted: ${REPORT_FILE}.gpg${NC}"
+                read -p "$(echo -e ${YELLOW}Delete unencrypted report? [y/N]: ${NC})" -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    shred -u "$REPORT_FILE"
+                    echo -e "${GREEN}✓ Unencrypted report securely deleted${NC}"
+                fi
+            fi
+        else
+            echo -e "${YELLOW}GPG not installed. Install with: sudo apt install gnupg${NC}"
+        fi
+    fi
+fi
+
+echo ""
