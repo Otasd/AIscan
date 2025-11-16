@@ -210,7 +210,19 @@ print_result() {
         echo -e "${BOLD}${BLUE}║  $title${NC}"
         echo -e "${BOLD}${BLUE}╚═══════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
-        cat "$file"
+        
+        # Print with line limiting to prevent terminal overflow
+        # Use fold to wrap long lines and head to limit total output
+        cat "$file" | fold -w 120 -s | head -n 500
+        
+        # Check if file was truncated
+        local line_count=$(wc -l < "$file")
+        if [ $line_count -gt 500 ]; then
+            echo ""
+            echo -e "${YELLOW}[... Output truncated - showing first 500 lines of $line_count total ...]${NC}"
+            echo -e "${CYAN}[Full results available in report file]${NC}"
+        fi
+        
         echo ""
         echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
